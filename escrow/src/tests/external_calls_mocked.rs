@@ -7,7 +7,81 @@ use super::super::external_calls::{
     transfer_funding_token_with_balance_checks, transfer_into_escrow_with_balance_checks,
 };
 use super::*;
-use soroban_sdk::{contract, contractimpl, token::TokenInterface, Address, Env, MuxedAddress};
+use soroban_sdk::{
+    contract, contractimpl,
+    token::{TokenClient, TokenInterface},
+    Address, Env, MuxedAddress,
+};
+
+#[contract]
+pub struct ExternalCallHarness;
+
+#[contractimpl]
+impl ExternalCallHarness {
+    pub fn transfer_out(
+        env: Env,
+        token_addr: Address,
+        from: Address,
+        recipient: Address,
+        amount: i128,
+    ) {
+        transfer_funding_token_with_balance_checks(&env, &token_addr, &from, &recipient, amount);
+    }
+
+    pub fn transfer_in(
+        env: Env,
+        token_addr: Address,
+        from: Address,
+        recipient: Address,
+        amount: i128,
+    ) {
+        transfer_into_escrow_with_balance_checks(&env, &token_addr, &from, &recipient, amount);
+    }
+}
+
+fn assert_rejected_outbound_transfer_preserves_balances(
+    env: &Env,
+    token_addr: &Address,
+    from: &Address,
+    recipient: &Address,
+    amount: i128,
+) {
+    let token = TokenClient::new(env, token_addr);
+    let from_before = token.balance(from);
+    let recipient_before = token.balance(recipient);
+    let harness_id = env.register(ExternalCallHarness, ());
+    let harness = ExternalCallHarnessClient::new(env, &harness_id);
+
+    for _ in 0..2 {
+        assert!(harness
+            .try_transfer_out(token_addr, from, recipient, &amount)
+            .is_err());
+        assert_eq!(token.balance(from), from_before);
+        assert_eq!(token.balance(recipient), recipient_before);
+    }
+}
+
+fn assert_rejected_inbound_transfer_preserves_balances(
+    env: &Env,
+    token_addr: &Address,
+    from: &Address,
+    recipient: &Address,
+    amount: i128,
+) {
+    let token = TokenClient::new(env, token_addr);
+    let from_before = token.balance(from);
+    let recipient_before = token.balance(recipient);
+    let harness_id = env.register(ExternalCallHarness, ());
+    let harness = ExternalCallHarnessClient::new(env, &harness_id);
+
+    for _ in 0..2 {
+        assert!(harness
+            .try_transfer_in(token_addr, from, recipient, &amount)
+            .is_err());
+        assert_eq!(token.balance(from), from_before);
+        assert_eq!(token.balance(recipient), recipient_before);
+    }
+}
 // ---------------------------------------------------------------------------
 // Mock: fee-on-transfer token
 // Steals 1% on every transfer — recipient gets less than sender sent.
@@ -76,7 +150,6 @@ fn mint_fee_token(env: &Env, contract_id: &Address, to: &Address, amount: i128) 
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_fee_on_transfer_token_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -87,8 +160,14 @@ fn test_fee_on_transfer_token_rejected() {
 
     mint_fee_token(&env, &fee_token_id, &holder, 1000i128);
 
-    // Panics: recipient gets 990 but function expects exactly 1000
-    transfer_funding_token_with_balance_checks(&env, &fee_token_id, &holder, &treasury, 1000i128);
+    // Recipient gets 990, so both attempted transactions must roll back.
+    assert_rejected_outbound_transfer_preserves_balances(
+        &env,
+        &fee_token_id,
+        &holder,
+        &treasury,
+        1000i128,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +175,6 @@ fn test_fee_on_transfer_token_rejected() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_zero_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -104,11 +182,10 @@ fn test_zero_amount_rejected() {
     let holder = deploy_id(&env);
     let treasury = Address::generate(&env);
 
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0);
+    assert_rejected_outbound_transfer_preserves_balances(&env, &token.id, &holder, &treasury, 0);
 }
 
 #[test]
-#[should_panic]
 fn test_negative_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -116,7 +193,13 @@ fn test_negative_amount_rejected() {
     let holder = deploy_id(&env);
     let treasury = Address::generate(&env);
 
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, -1i128);
+    assert_rejected_outbound_transfer_preserves_balances(
+        &env,
+        &token.id,
+        &holder,
+        &treasury,
+        -1i128,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +207,6 @@ fn test_negative_amount_rejected() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_insufficient_balance_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -135,7 +217,30 @@ fn test_insufficient_balance_rejected() {
     // Mint only 500 but try to transfer 1000
     token.stellar.mint(&holder, &500i128);
 
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1000i128);
+    assert_rejected_outbound_transfer_preserves_balances(
+        &env,
+        &token.id,
+        &holder,
+        &treasury,
+        1000i128,
+    );
+}
+
+#[test]
+fn test_outbound_transfer_requires_sender_authorization() {
+    let env = Env::default();
+    let fee_token_id = env.register(FeeOnTransferToken, ());
+    let holder = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    mint_fee_token(&env, &fee_token_id, &holder, 1000i128);
+
+    assert_rejected_outbound_transfer_preserves_balances(
+        &env,
+        &fee_token_id,
+        &holder,
+        &treasury,
+        1000i128,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +455,6 @@ fn mint_rebasing_token(env: &Env, contract_id: &Address, to: &Address, amount: i
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_rebasing_token_sender_increases_rejected() {
     // Rebasing token mints extra tokens to sender after transfer.
     // Sender post-balance > sender pre-balance - amount, which triggers underflow.
@@ -363,9 +467,8 @@ fn test_rebasing_token_sender_increases_rejected() {
 
     mint_rebasing_token(&env, &rebase_token_id, &holder, 1000i128);
 
-    // Panics: sender ends with 100 (1000 - 1000 + 100 rebasing) instead of 0
-    // This triggers SenderBalanceUnderflow because from_before - from_after underflows
-    transfer_funding_token_with_balance_checks(
+    // Sender balance increases after transfer; the failed call must roll it back.
+    assert_rejected_outbound_transfer_preserves_balances(
         &env,
         &rebase_token_id,
         &holder,
@@ -440,7 +543,6 @@ fn mint_hook_token(env: &Env, contract_id: &Address, to: &Address, amount: i128)
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_hook_token_recipient_decreases_rejected() {
     // Hook steals 10% after transfer.
     // Treasury post-balance < treasury pre-balance + amount, triggering RecipientBalanceDeltaMismatch.
@@ -454,7 +556,13 @@ fn test_hook_token_recipient_decreases_rejected() {
     mint_hook_token(&env, &hook_token_id, &holder, 1000i128);
 
     // Panics: recipient ends with 900 (1000 - 100 hook steal) instead of 1000
-    transfer_funding_token_with_balance_checks(&env, &hook_token_id, &holder, &treasury, 1000i128);
+    assert_rejected_outbound_transfer_preserves_balances(
+        &env,
+        &hook_token_id,
+        &holder,
+        &treasury,
+        1000i128,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -518,7 +626,6 @@ fn mint_lying_token(env: &Env, contract_id: &Address, to: &Address, amount: i128
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_lying_token_no_change_rejected() {
     // Token that does nothing on transfer - no debit, no credit.
     // Both sender and recipient deltas are 0, neither equals amount.
@@ -532,7 +639,13 @@ fn test_lying_token_no_change_rejected() {
     mint_lying_token(&env, &lying_token_id, &holder, 1000i128);
 
     // Panics with SenderBalanceDeltaMismatch (sender didn't lose anything)
-    transfer_funding_token_with_balance_checks(&env, &lying_token_id, &holder, &treasury, 1000i128);
+    assert_rejected_outbound_transfer_preserves_balances(
+        &env,
+        &lying_token_id,
+        &holder,
+        &treasury,
+        1000i128,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -540,7 +653,6 @@ fn test_lying_token_no_change_rejected() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_amount_zero_panics_with_transfer_amount_not_positive() {
     let env = Env::default();
     env.mock_all_auths();
@@ -549,11 +661,10 @@ fn test_amount_zero_panics_with_transfer_amount_not_positive() {
     let treasury = Address::generate(&env);
 
     // Error code 36: TransferAmountNotPositive
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0);
+    assert_rejected_outbound_transfer_preserves_balances(&env, &token.id, &holder, &treasury, 0);
 }
 
 #[test]
-#[should_panic]
 fn test_amount_negative_panics_with_transfer_amount_not_positive() {
     let env = Env::default();
     env.mock_all_auths();
@@ -562,11 +673,10 @@ fn test_amount_negative_panics_with_transfer_amount_not_positive() {
     let treasury = Address::generate(&env);
 
     // Error code 36: TransferAmountNotPositive (negative is still not positive)
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, -50);
+    assert_rejected_outbound_transfer_preserves_balances(&env, &token.id, &holder, &treasury, -50);
 }
 
 #[test]
-#[should_panic]
 fn test_insufficient_balance_panics_with_insufficient_token_balance() {
     let env = Env::default();
     env.mock_all_auths();
@@ -576,7 +686,7 @@ fn test_insufficient_balance_panics_with_insufficient_token_balance() {
 
     // Mint nothing - balance is 0
     // Error code 37: InsufficientTokenBalanceBeforeTransfer
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1);
+    assert_rejected_outbound_transfer_preserves_balances(&env, &token.id, &holder, &treasury, 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -584,7 +694,6 @@ fn test_insufficient_balance_panics_with_insufficient_token_balance() {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[should_panic]
 fn test_inbound_fee_on_transfer_token_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -592,34 +701,43 @@ fn test_inbound_fee_on_transfer_token_rejected() {
     let investor = Address::generate(&env);
     let escrow = deploy_id(&env);
     mint_fee_token(&env, &fee_token_id, &investor, 1000i128);
-    // Recipient (escrow) receives less than amount -> panic
-    transfer_into_escrow_with_balance_checks(&env, &fee_token_id, &investor, &escrow, 1000i128);
+    // Recipient receives less than amount; each failed attempt must roll back.
+    assert_rejected_inbound_transfer_preserves_balances(
+        &env,
+        &fee_token_id,
+        &investor,
+        &escrow,
+        1000i128,
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_inbound_zero_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
     let token = install_stellar_asset_token(&env);
     let investor = deploy_id(&env);
     let escrow = Address::generate(&env);
-    transfer_into_escrow_with_balance_checks(&env, &token.id, &investor, &escrow, 0);
+    assert_rejected_inbound_transfer_preserves_balances(&env, &token.id, &investor, &escrow, 0);
 }
 
 #[test]
-#[should_panic]
 fn test_inbound_negative_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
     let token = install_stellar_asset_token(&env);
     let investor = deploy_id(&env);
     let escrow = Address::generate(&env);
-    transfer_into_escrow_with_balance_checks(&env, &token.id, &investor, &escrow, -1i128);
+    assert_rejected_inbound_transfer_preserves_balances(
+        &env,
+        &token.id,
+        &investor,
+        &escrow,
+        -1i128,
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_inbound_insufficient_balance_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -627,11 +745,16 @@ fn test_inbound_insufficient_balance_rejected() {
     let investor = deploy_id(&env);
     let escrow = Address::generate(&env);
     // Investor has no tokens
-    transfer_into_escrow_with_balance_checks(&env, &token.id, &investor, &escrow, 1i128);
+    assert_rejected_inbound_transfer_preserves_balances(
+        &env,
+        &token.id,
+        &investor,
+        &escrow,
+        1i128,
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_inbound_lying_token_no_change_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -640,11 +763,16 @@ fn test_inbound_lying_token_no_change_rejected() {
     let escrow = deploy_id(&env);
     mint_lying_token(&env, &lying_token_id, &investor, 1000i128);
     // No balance change -> RecipientBalanceDeltaMismatch
-    transfer_into_escrow_with_balance_checks(&env, &lying_token_id, &investor, &escrow, 1000i128);
+    assert_rejected_inbound_transfer_preserves_balances(
+        &env,
+        &lying_token_id,
+        &investor,
+        &escrow,
+        1000i128,
+    );
 }
 
 #[test]
-#[should_panic]
 fn test_inbound_hook_token_recipient_decreases_rejected() {
     let env = Env::default();
     env.mock_all_auths();
@@ -653,7 +781,13 @@ fn test_inbound_hook_token_recipient_decreases_rejected() {
     let escrow = deploy_id(&env);
     mint_hook_token(&env, &hook_token_id, &investor, 1000i128);
     // Hook reduces escrow balance after transfer
-    transfer_into_escrow_with_balance_checks(&env, &hook_token_id, &investor, &escrow, 1000i128);
+    assert_rejected_inbound_transfer_preserves_balances(
+        &env,
+        &hook_token_id,
+        &investor,
+        &escrow,
+        1000i128,
+    );
 }
 
 #[test]
