@@ -7,7 +7,7 @@ use soroban_sdk::testutils::Address as _;
 // ---------------------------------------------------------------------------
 fn setup_with_nonce(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
     let mut ledger_info = env.ledger().get();
-    ledger_info.timestamp = 12345;
+    ledger_info.timestamp = 0;
     ledger_info.sequence_number = 100;
     env.ledger().set(ledger_info);
     env.mock_all_auths();
@@ -32,6 +32,10 @@ fn setup_with_nonce(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) 
         &None,
         &None,
         &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
     );
     (client, admin, sme)
 }
@@ -189,9 +193,11 @@ fn nonce_at_max_minus_one_succeeds() {
     let (client, _admin, _sme) = setup_with_nonce(&env);
 
     // Set nonce to u32::MAX - 1.
-    env.storage()
-        .instance()
-        .set(&DataKey::AdminNonce, &(u32::MAX - 1));
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::AdminNonce, &(u32::MAX - 1));
+    });
     assert_eq!(client.get_admin_nonce(), u32::MAX - 1);
 
     // Action with nonce u32::MAX - 1 should succeed and increment to MAX.
@@ -205,9 +211,11 @@ fn nonce_at_max_overflow_rejected() {
     let (client, _admin, _sme) = setup_with_nonce(&env);
 
     // Set nonce to u32::MAX.
-    env.storage()
-        .instance()
-        .set(&DataKey::AdminNonce, &u32::MAX);
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&DataKey::AdminNonce, &u32::MAX);
+    });
     assert_eq!(client.get_admin_nonce(), u32::MAX);
 
     // Action with nonce u32::MAX should fail because increment would overflow.
@@ -349,12 +357,6 @@ fn migrate_uses_nonce() {
 
     // Nonce should have been consumed (incremented to 1) before the
     // version check failed. But actually, nonce is consumed AFTER admin auth
-    // and BEFORE version check. Let me check:
-    // In the code: load_escrow_require_admin + consume_admin_nonce happen first,
-    // then version check. So nonce IS consumed even though migrate fails.
-    //
-    // Actually, wait - consume_admin_nonce is called, then the version check.
-    // If nonce is 0 and we pass 0, nonce is consumed to 1.
-    // Then version check fails. The nonce is still incremented.
-    assert_eq!(client.get_admin_nonce(), 1u32);
+    // Since the transaction reverts on failed version check, instance storage changes are rolled back.
+    assert_eq!(client.get_admin_nonce(), 0u32);
 }
