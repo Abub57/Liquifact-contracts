@@ -44,6 +44,7 @@ pub(crate) fn assert_contract_error<T, E>(
 // modules stay assertion-focused and each test still owns a fresh Env.
 mod admin;
 mod admin_nonce;
+mod attestation_parameters;
 mod attestations;
 mod cap_validation;
 mod collateral_boundary_tests;
