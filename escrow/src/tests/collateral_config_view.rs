@@ -179,7 +179,10 @@ fn test_struct_shape_stability() {
     } = client.get_collateral_config();
 
     assert_eq!(collateral_limit, 100_000i128);
-    assert!(matches!(sme_commitment, CollateralCommitmentSnapshot::Some(_)));
+    assert!(matches!(
+        sme_commitment,
+        CollateralCommitmentSnapshot::Some(_)
+    ));
 }
 
 // ── Section 4: Consistency with individual getters ────────────────────────────
@@ -401,10 +404,7 @@ fn test_set_collateral_limit_rejected_does_not_mutate_state() {
 
     // Limit must still be 10_000.
     assert_eq!(client.get_collateral_limit(), 10_000i128);
-    assert_eq!(
-        client.get_collateral_config().collateral_limit,
-        10_000i128
-    );
+    assert_eq!(client.get_collateral_config().collateral_limit, 10_000i128);
 }
 
 // ── Section 7: record_sme_collateral_commitment limit enforcement ─────────────
@@ -733,10 +733,7 @@ fn test_set_collateral_limit_same_value_idempotent() {
     client.set_collateral_limit(&10_000i128); // second call with same value
 
     assert_eq!(client.get_collateral_limit(), 10_000i128);
-    assert_eq!(
-        client.get_collateral_config().collateral_limit,
-        10_000i128
-    );
+    assert_eq!(client.get_collateral_config().collateral_limit, 10_000i128);
 }
 
 /// `get_collateral_config` reflects the state at the ledger snapshot time — calling it
