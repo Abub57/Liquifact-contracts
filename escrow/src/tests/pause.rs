@@ -1,5 +1,5 @@
 use super::*;
-use crate::{EscrowError, PausedChanged};
+use crate::{EscrowError, PauseReason, PauseScope, PausedChanged};
 use soroban_sdk::{testutils::Events, token::StellarAssetClient, Event};
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
