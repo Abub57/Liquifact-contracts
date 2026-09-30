@@ -127,10 +127,10 @@ pub fn transfer_funding_token_with_balance_checks(
 
     let spent = from_before
         .checked_sub(from_after)
-        .unwrap_or_else(;| fail(env, EscrowError::SenderBalanceUnderflow));
+        .unwrap_or_else((|| fail(env, EscrowError::SenderBalanceUnderflow));
     let received = treasury_after
         .checked_sub(treasury_before)
-        .unwrap_or_else(;| fail(env, EscrowError::RecipientBalanceUnderflow));
+        .unwrap_or_else(()| fail(env, EscrowError::RecipientBalanceUnderflow));
 
     ensure(
         env,
@@ -194,10 +194,10 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
 
     let spent = investor_before
         .checked_sub(investor_after)
-        .unwrap_or_else(;| fail(env, EscrowError::InboundSenderBalanceUnderflow));
+        .unwrap_or_else(()| fail(env, EscrowError::InboundSenderBalanceUnderflow));
     let received = contract_after
         .checked_sub(contract_before)
-        .unwrap_or_else(;| fail(env, EscrowError::InboundRecipientBalanceUnderflow));
+        .unwrap_or_else(()| fail(env, EscrowError::InboundRecipientBalanceUnderflow));
 
     ensure(
         env,

@@ -1,6 +1,3 @@
-// NOTE: Tests in this module exercise deterministic failure-recovery paths for
-// external token transfers. Tests that depend on upstream escrow APIs not yet
-// present on this branch are marked `#[ignore]` with a reason string.
 use super::super::external_calls::transfer_funding_token_with_balance_checks;
 use super::*;
 use soroban_sdk::{Address, Env, MuxedAddress};
@@ -200,6 +197,92 @@ fn test_edge_case_maximum_amount_transfer() {
     assert_eq!(treasury_after - treasury_before, large_amount);
     assert_eq!(holder_after, 0i128);
     assert_eq!(treasury_after, large_amount);
+}
+
+// ── Deterministic failure recovery for transfer_funding_token_with_balance_checks ──
+//
+// Invariant: when a transfer fails (insufficient balance, zero/negative amount),
+// no state is mutated and the operation is safely retryable. A subsequent valid
+// transfer must succeed and produce exact balance deltas, proving recovery is
+// deterministic and does not leak partial state.
+
+#[test]
+fn failed_transfer_leaves_state_unchanged_and_is_retryable() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    // Holder has 100, attempt to transfer 500 → must fail without mutation.
+    token.stellar.mint(&holder, &100i128);
+    let holder_before = token.token.balance(&holder);
+    let treasury_before = token.token.balance(&treasury);
+    assert_eq!(holder_before, 100i128);
+    assert_eq!(treasury_before, 0i128);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 500i128);
+    }));
+    assert!(result.is_err(), "over-balance transfer must fail");
+
+    // State must be unchanged after the failed attempt.
+    assert_eq!(token.token.balance(&holder), holder_before);
+    assert_eq!(token.token.balance(&treasury), treasury_before);
+
+    // Retry with a valid amount must succeed deterministically.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 100i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 100i128);
+}
+
+#[test]
+fn zero_amount_failure_is_retryable_with_valid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &250i128);
+
+    // Zero-amount attempt must fail without mutating balances.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0i128);
+    }));
+    assert!(result.is_err(), "zero-amount transfer must fail");
+    assert_eq!(token.token.balance(&holder), 250i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    // Recovery: a valid transfer succeeds and preserves exact deltas.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 250i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 250i128);
+}
+
+#[test]
+fn negative_amount_failure_is_retryable_with_valid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &75i128);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, -1i128);
+    }));
+    assert!(result.is_err(), "negative-amount transfer must fail");
+    assert_eq!(token.token.balance(&holder), 75i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 75i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 75i128);
 }
 
 // ── Liability floor tests for sweep_terminal_dust ────────────────────────────
