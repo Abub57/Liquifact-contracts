@@ -2845,7 +2845,10 @@ fn test_cap_lowering_invariant_count_never_exceeds_cap() {
     for step in [10u32, 9, 7, 5, 4].iter() {
         let current_count = client.get_unique_funder_count();
         let current_cap = client.get_max_unique_investors_cap().unwrap();
-        assert!(current_count <= current_cap, "count <= cap invariant broken");
+        assert!(
+            current_count <= current_cap,
+            "count <= cap invariant broken"
+        );
         if *step < current_cap {
             if *step >= current_count {
                 client.lower_max_unique_investors(&step, &0u32);

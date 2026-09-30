@@ -952,13 +952,7 @@ fn test_outbound_self_transfer_rejected_pre_transfer() {
     let same_addr = deploy_id(&env);
     token.stellar.mint(&same_addr, &1000i128);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &same_addr,
-        &same_addr,
-        500i128,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &same_addr, &same_addr, 500i128);
 }
 
 #[test]
@@ -972,11 +966,7 @@ fn test_outbound_self_transfer_rejected_with_contract_error() {
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         transfer_funding_token_with_balance_checks(
-            &env,
-            &token.id,
-            &same_addr,
-            &same_addr,
-            500i128,
+            &env, &token.id, &same_addr, &same_addr, 500i128,
         );
     }));
     assert!(result.is_err(), "self-transfer must panic");
@@ -994,11 +984,7 @@ fn test_inbound_self_transfer_rejected_pre_transfer() {
 
     use super::super::external_calls::transfer_funding_token_inbound_with_balance_checks;
     transfer_funding_token_inbound_with_balance_checks(
-        &env,
-        &token.id,
-        &same_addr,
-        &same_addr,
-        500i128,
+        &env, &token.id, &same_addr, &same_addr, 500i128,
     );
 }
 
@@ -1014,11 +1000,7 @@ fn test_inbound_self_transfer_rejected_with_contract_error() {
     use super::super::external_calls::transfer_funding_token_inbound_with_balance_checks;
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         transfer_funding_token_inbound_with_balance_checks(
-            &env,
-            &token.id,
-            &same_addr,
-            &same_addr,
-            500i128,
+            &env, &token.id, &same_addr, &same_addr, 500i128,
         );
     }));
     assert!(result.is_err(), "inbound self-transfer must panic");
@@ -1038,13 +1020,7 @@ fn test_outbound_distinct_addresses_succeed_after_self_transfer_rejected() {
     assert_eq!(token.token.balance(&holder), amount);
     assert_eq!(token.token.balance(&treasury), 0);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &holder,
-        &treasury,
-        amount,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
 
     assert_eq!(token.token.balance(&holder), 0);
     assert_eq!(token.token.balance(&treasury), amount);
@@ -1066,11 +1042,7 @@ fn test_inbound_distinct_addresses_succeed_after_self_transfer_rejected() {
 
     use super::super::external_calls::transfer_funding_token_inbound_with_balance_checks;
     transfer_funding_token_inbound_with_balance_checks(
-        &env,
-        &token.id,
-        &investor,
-        &contract,
-        amount,
+        &env, &token.id, &investor, &contract, amount,
     );
 
     assert_eq!(token.token.balance(&investor), 0);
@@ -1093,13 +1065,7 @@ fn test_outbound_minimum_positive_amount_boundary() {
     assert_eq!(holder_before, 1);
     assert_eq!(treasury_before, 0);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &holder,
-        &treasury,
-        amount,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
 
     let holder_after = token.token.balance(&holder);
     let treasury_after = token.token.balance(&treasury);
@@ -1118,13 +1084,7 @@ fn test_outbound_exact_sender_balance_boundary() {
     let amount = 777i128;
     token.stellar.mint(&holder, &amount);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &holder,
-        &treasury,
-        amount,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
 
     assert_eq!(token.token.balance(&holder), 0);
     assert_eq!(token.token.balance(&treasury), amount);
@@ -1142,13 +1102,7 @@ fn test_outbound_one_over_sender_balance_rejected() {
     let amount = 100i128;
     token.stellar.mint(&holder, &amount);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &holder,
-        &treasury,
-        amount + 1,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount + 1);
 }
 
 #[test]
@@ -1162,24 +1116,11 @@ fn test_invariant_balance_zero_after_two_transfers_total() {
     let total = 1000i128;
     token.stellar.mint(&holder, &total);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &holder,
-        &treasury,
-        400i128,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 400i128);
     assert_eq!(token.token.balance(&holder), 600i128);
     assert_eq!(token.token.balance(&treasury), 400i128);
 
-    transfer_funding_token_with_balance_checks(
-        &env,
-        &token.id,
-        &holder,
-        &treasury,
-        600i128,
-    );
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 600i128);
     assert_eq!(token.token.balance(&holder), 0i128);
     assert_eq!(token.token.balance(&treasury), total);
 }
-

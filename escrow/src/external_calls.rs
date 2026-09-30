@@ -183,11 +183,6 @@ pub fn transfer_funding_token_with_balance_checks(
         received == amount,
         EscrowError::RecipientBalanceDeltaMismatch,
     );
-    ensure(
-        env,
-        from != treasury,
-        EscrowError::TransferSameSenderRecipient,
-    );
 }
 
 /// Transfer `amount` of `token_addr` from `investor` to `to` (typically this escrow contract),
@@ -259,10 +254,5 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
         env,
         received == amount,
         EscrowError::InboundRecipientBalanceDeltaMismatch,
-    );
-    ensure(
-        env,
-        investor != to,
-        EscrowError::InboundTransferSameSenderRecipient,
     );
 }
