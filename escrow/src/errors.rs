@@ -114,4 +114,19 @@ pub enum EscrowError {
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
+
+    // ------------------------------------------------------------------------------
+    // Concurrent Execution / Reentrancy Errors (250..259)
+    // ------------------------------------------------------------------------------
+    /// A guarded external-call entry point was entered while another invocation
+    /// was already in flight for the same escrow instance. This prevents
+    /// interleaved state transitions from producing stale or inconsistent results.
+    ConcurrentExecutionDetected = 250,
+    /// The external-call guard was released without a matching acquisition, or a
+    /// guarded section exited without clearing its marker. Indicates corrupted
+    /// guard state and must fail closed rather than proceed.
+    ExternalCallGuardInvariantViolation = 251,
+    /// A retried external-call operation was rejected because the prior attempt
+    /// already committed its effect. Callers should treat this as success.
+    ExternalCallAlreadyCompleted = 252,
 }
