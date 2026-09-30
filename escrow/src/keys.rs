@@ -1,4 +1,4 @@
-#![allow(dead_code)]
+#`![allow(dead_code)]
 //! Centralized constructors for funding-related storage keys.
 //!
 //! # Purpose
@@ -20,8 +20,24 @@
 //!
 //! Adding a new variant is **backward-compatible** when the new key is read with
 //! `.unwrap_or(default)` and its absence does not change existing entrypoint semantics.
-//! Renaming a variant, changing its XDR discriminant, or altering the stored type of an
-//! existing key is **breaking** and requires a `migrate` path or a full redeploy.
+//! Renaming a variant, changing its XDR discriminant, or altering the stored type of//! an existing key is **breaking** and requires a `migrate` path or a full redeploy.
+//!
+//! ## Concurrency and determinism
+//!
+//! Key constructors are pure functions: they derive a [`DataKey`] from their arguments
+//! with no storage access, no global mutable state, and no cross-call side effects. Two
+//! invocations with equal arguments always produce equal keys, and two invocations with
+//! different arguments always produce distinct keys. This is the invariant that lets
+//! concurrent entrypoint execution rely on key equality for determinism: the Sorban host
+//! serializes contract invocations, and the key layer adds no hidden nonce or time
+//! dependence that could make a retried or racing call resolve to a different slot.
+//!
+//! ## Invariants
+//!
+//! 1. Every constructor is deterministic and side-effect free.
+//! 2. Distinct arguments produce distinct [`DataKey`] values (collision resistance).
+//! 3. Equal arguments produce equal [`DataKey`] values (idempotence).
+//! 4. No constructor reads or writes contract storage.
 
 // Key-builder helpers are part of the crate's public API for symmetry. Call sites
 // currently use `DataKey::Variant` literals inline; the helpers are kept so the

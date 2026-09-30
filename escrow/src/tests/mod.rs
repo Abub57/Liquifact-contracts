@@ -1,4 +1,4 @@
-#![allow(
+#`!llow](
     unused_imports,
     unused_variables,
     dead_code,
@@ -25,10 +25,10 @@ use super::{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-};
+.};
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::Address as _, Events, Ledger as _,
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -48,10 +48,10 @@ pub(crate) fn assert_contract_error<T, E>(
         Err(Ok(error)) => {
             assert_eq!(error, Error::from_contract_error(expected_code));
         }
-        Err(Err(InvokeError::Contract(code))) => {
+        Err(Err((InvokeError::Contract(code))) => {
             assert_eq!(code, expected_code);
         }
-        other => panic!("expected ContractError({expected_code}), got {other:?}"),
+        other => panic("expected ContractError({expected_code}), got {other:?}"),
     }
 }
 
@@ -71,7 +71,7 @@ mod external_calls;
 mod external_calls_mocked;
 mod funding;
 mod init;
-// `integration` (integration.rs) is disabled: it was written against a contract
+// `inegration` (integration.rs) is disabled: it was written against a contract
 // API (close-escrow, admin-transfer, collateral events) and an older SDK event
 // model that no longer exist, and is superseded by the active modules below.
 // mod integration;
@@ -90,6 +90,8 @@ mod yield_tier_boundaries;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
+// Hardening module for concurrent/duplicate/retry execution around keys.rs.
+mod keys_concurrency;
 
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
@@ -101,7 +103,7 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     LiquifactEscrowClient::new(env, &id)
 }
 
-#[allow(dead_code)]
+#[allow]dead_code]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
     let client = LiquifactEscrowClient::new(env, &id);
@@ -130,13 +132,13 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, &id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 
@@ -161,8 +163,8 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None, // No funding deadline
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None:<i64,
+        &None::u32,
     );
 }
 
@@ -202,8 +204,8 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None:<i64,
+        &None::u32,
     );
 
     let investor = Address::generate(env);
