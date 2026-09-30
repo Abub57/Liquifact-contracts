@@ -302,7 +302,7 @@ fn test_cancel_funding_no_auth_panics() {
     let env = Env::default();
     let (client, _admin, _sme, _treasury, _token) = setup_inited(&env);
     env.mock_auths(&[]);
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
 }
 
 /// Calling `cancel_funding` with a non-admin signer panics at the
@@ -318,11 +318,11 @@ fn test_cancel_funding_wrong_signer_panics() {
         invoke: &MockAuthInvoke {
             contract: &client.address,
             fn_name: "cancel_funding",
-            args: SorobanVec::new(&env),
+            args: SorobanVec::from_array(&env, [0u32.into_val(&env)]),
             sub_invokes: &[],
         },
     }]);
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
 }
 
 // ── refund ──────────────────────────────────────────────────────────────
@@ -337,7 +337,7 @@ fn test_refund_no_auth_panics() {
     let investor = Address::generate(&env);
     // Fund and cancel to reach status 4 (cancelled).
     client.fund(&investor, &1_000i128);
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
     env.mock_auths(&[]);
     client.refund(&investor);
 }
@@ -353,7 +353,7 @@ fn test_refund_wrong_signer_panics() {
     let investor = Address::generate(&env);
     let stranger = Address::generate(&env);
     client.fund(&investor, &1_000i128);
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
     env.mock_auths(&[MockAuth {
         address: &stranger,
         invoke: &MockAuthInvoke {
@@ -376,7 +376,7 @@ fn test_sweep_terminal_dust_no_auth_panics() {
     let env = Env::default();
     let (client, _admin, _sme, _treasury, _token) = setup_inited(&env);
     // Cancel to reach a terminal status (4 — cancelled).
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
     env.mock_auths(&[]);
     client.sweep_terminal_dust(&100i128);
 }
@@ -389,7 +389,7 @@ fn test_sweep_terminal_dust_no_auth_panics() {
 fn test_sweep_terminal_dust_wrong_signer_panics() {
     let env = Env::default();
     let (client, _admin, sme, _treasury, _token) = setup_inited(&env);
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
     env.mock_auths(&[MockAuth {
         address: &sme,
         invoke: &MockAuthInvoke {

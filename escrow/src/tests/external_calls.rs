@@ -519,7 +519,7 @@ fn setup_multi_investor_cancelled<'a>(
     for i in 0..investors.len() {
         client.fund(&investors[i], &amounts[i]);
     }
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
     (token, treasury)
 }
 
@@ -667,7 +667,7 @@ fn sweep_liability_floor_legal_hold_blocks() {
     let (_token, _treasury) =
         setup_cancelled_with_token(&env, &client, &admin, &sme, &investor, 500i128);
 
-    client.set_legal_hold(&true);
+    client.set_legal_hold(&true, &1u32);
     client.sweep_terminal_dust(&1i128);
 }
 
@@ -756,7 +756,7 @@ fn reconciliation_surplus_equals_sweepable_dust_before_and_after_partial_refund(
     token.stellar.mint(&investor_a, &1_001i128);
     client.fund(&investor_a, &500i128);
     client.fund(&investor_b, &500i128);
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
 
     // Before any refund: outstanding = 1000, balance = 1001, surplus = 1.
     let before = client.get_reconciliation();

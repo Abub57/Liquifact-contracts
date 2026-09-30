@@ -6969,8 +6969,9 @@ impl LiquifactEscrow {
             .unwrap_or_else(|| fail(&env, EscrowError::ComputePayoutArithmeticOverflow))
     }
 
-    pub fn update_maturity(env: Env, new_maturity: u64) -> InvoiceEscrow {
+    pub fn update_maturity(env: Env, new_maturity: u64, expected_nonce: u32) -> InvoiceEscrow {
         let mut escrow = Self::load_escrow_require_admin(&env);
+        Self::consume_admin_nonce(&env, expected_nonce);
 
         guard_status_eq(&env, escrow.status, 0, EscrowError::MaturityUpdateNotOpen);
 
@@ -7157,8 +7158,9 @@ impl LiquifactEscrow {
         }
     }
 
-    pub fn update_maturity_max_horizon(env: Env, new_horizon: u64) -> u64 {
+    pub fn update_maturity_max_horizon(env: Env, new_horizon: u64, expected_nonce: u32) -> u64 {
         let escrow = Self::load_escrow_require_admin(&env);
+        Self::consume_admin_nonce(&env, expected_nonce);
 
         let old_horizon = env
             .storage()
@@ -8154,16 +8156,19 @@ mod init_reentry_guard_tests {
     use soroban_sdk::testutils::Address as _;
 
     fn sample_escrow(env: &Env) -> InvoiceEscrow {
+        let sme = Address::generate(env);
         InvoiceEscrow {
             invoice_id: symbol_short!("inv"),
             admin: Address::generate(env),
-            sme_address: Address::generate(env),
+            sme_address: sme.clone(),
+            payer: sme,
             amount: 1_000,
             funding_target: 1_000,
             funded_amount: 0,
             yield_bps: 0,
             maturity: 0,
             status: 0,
+            dispute_active: false,
         }
     }
 
@@ -8270,7 +8275,7 @@ pub struct DefaultMockToken;
 impl DefaultMockToken {
     pub fn balance(env: soroban_sdk::Env, addr: soroban_sdk::Address) -> i128 {
         let key = soroban_sdk::symbol_short!("balances");
-        let mut balances: soroban_sdk::Map<soroban_sdk::Address, i128> = env
+        let balances: soroban_sdk::Map<soroban_sdk::Address, i128> = env
             .storage()
             .instance()
             .get(&key)

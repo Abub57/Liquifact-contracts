@@ -32,6 +32,10 @@ fn setup_with_nonce(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) 
         &None,
         &None,
         &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
     );
     (client, admin, sme)
 }

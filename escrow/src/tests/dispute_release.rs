@@ -80,5 +80,5 @@ fn unauthorized_dispute_close_panics() {
     let (client, _, _) = funded_client(&env);
     let outsider = Address::generate(&env);
     let err = client.try_close_dispute(&outsider, &true);
-    assert_contract_error(err, EscrowError::Unauthorized);
+    assert_contract_error(err, EscrowError::DisputeCloseUnauthorized);
 }
