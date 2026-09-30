@@ -1,3 +1,6 @@
+// NOTE: Tests in this module exercise deterministic failure-recovery paths for
+// external token transfers. Tests that depend on upstream escrow APIs not yet
+// present on this branch are marked `#[ignore]` with a reason string.
 use super::super::external_calls::transfer_funding_token_with_balance_checks;
 use super::*;
 use soroban_sdk::{Address, Env, MuxedAddress};
