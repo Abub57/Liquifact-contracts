@@ -157,6 +157,7 @@ use soroban_sdk::{
 
 pub mod external_calls;
 mod keys;
+mod types;
 
 /// Upper bound on [`LiquifactEscrow::set_investors_allowlisted`] batch size per call.
 pub const MAX_INVESTOR_ALLOWLIST_BATCH: u32 = 32;
@@ -2662,8 +2663,8 @@ fn validate_invoice_id_string(env: &Env, invoice_id: &String) -> Symbol {
 impl LiquifactEscrow {
     /// Admin-authorized submission of a new pending fee schedule.
     ///
-    /// The schedule must be in-bounds and its activation ledger must lie strictly
-    /// in the future. Duplicate pending schedules are idempotent.
+    /// New schedules must be in-bounds and activate in a future ledger.
+    /// Duplicate submissions are idempotent, including retries after activation.
     pub fn submit_fee_schedule(env: Env, schedule: FeeSchedule) {
         let escrow: InvoiceEscrow = env
             .storage()
@@ -2680,26 +2681,33 @@ impl LiquifactEscrow {
         }
 
         let current_ledger = env.ledger().sequence();
+        let mut state = types::FeeScheduleState::load(&env);
+        let promoted = state.activate_if_due(current_ledger);
+
+        // A retry remains successful after the pending schedule has activated.
+        // Compare only after staging promotion so due schedules are handled
+        // identically whether activation or submission reaches the ledger first.
+        if state.active.as_ref() == Some(&schedule) {
+            if promoted {
+                state.persist(&env);
+            }
+            return;
+        }
+
+        if state.pending.as_ref() == Some(&schedule) {
+            return;
+        }
+
         if schedule.activation_ledger <= current_ledger {
             panic_with_error!(&env, FeeScheduleError::InvalidActivationLedger);
         }
 
-        Self::activate_fee_schedule(env.clone());
-
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        if pending.as_ref() == Some(&schedule) {
-            return;
-        }
-        if pending.is_some() {
+        if state.pending.is_some() {
             panic_with_error!(&env, FeeScheduleError::PendingScheduleExists);
         }
 
-        env.storage()
-            .instance()
-            .set(&FeeScheduleStorageKey::Pending, &schedule);
+        state.pending = Some(schedule);
+        state.persist(&env);
     }
 
     /// Promotes a pending schedule to active when its activation ledger is reached.
@@ -2708,25 +2716,10 @@ impl LiquifactEscrow {
     /// admin-authorized schedule and records the previous active schedule.
     pub fn activate_fee_schedule(env: Env) -> bool {
         let current_ledger = env.ledger().sequence();
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        if let Some(p) = pending {
-            if p.activation_ledger <= current_ledger {
-                let previous: Option<FeeSchedule> =
-                    env.storage().instance().get(&FeeScheduleStorageKey::Active);
-                env.storage()
-                    .instance()
-                    .set(&FeeScheduleStorageKey::Active, &p);
-                env.storage()
-                    .instance()
-                    .set(&FeeScheduleStorageKey::Previous, &previous);
-                env.storage()
-                    .instance()
-                    .remove(&FeeScheduleStorageKey::Pending);
-                return true;
-            }
+        let mut state = types::FeeScheduleState::load(&env);
+        if state.activate_if_due(current_ledger) {
+            state.persist(&env);
+            return true;
         }
         false
     }
@@ -2734,46 +2727,17 @@ impl LiquifactEscrow {
     /// Returns the active fee schedule for the current ledger, computing any
     /// not-yet-promoted boundary activation on the fly.
     pub fn get_active_fee_schedule(env: Env) -> Option<FeeSchedule> {
-        let active: Option<FeeSchedule> =
-            env.storage().instance().get(&FeeScheduleStorageKey::Active);
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        match pending {
-            Some(p) if p.activation_ledger <= env.ledger().sequence() => Some(p),
-            _ => active,
-        }
+        types::FeeScheduleState::load(&env).active_at(env.ledger().sequence())
     }
 
     /// Returns the pending fee schedule that will activate at a future ledger.
     pub fn get_pending_fee_schedule(env: Env) -> Option<FeeSchedule> {
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        match pending {
-            Some(p) if p.activation_ledger > env.ledger().sequence() => Some(p),
-            _ => None,
-        }
+        types::FeeScheduleState::load(&env).pending_at(env.ledger().sequence())
     }
 
     /// Returns the previously active fee schedule after a boundary activation.
     pub fn get_previous_fee_schedule(env: Env) -> Option<FeeSchedule> {
-        let active: Option<FeeSchedule> =
-            env.storage().instance().get(&FeeScheduleStorageKey::Active);
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        if let Some(p) = pending {
-            if p.activation_ledger <= env.ledger().sequence() {
-                return active;
-            }
-        }
-        env.storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Previous)
+        types::FeeScheduleState::load(&env).previous_at(env.ledger().sequence())
     }
     fn legal_hold_active(env: &Env) -> bool {
         env.storage()
@@ -8729,6 +8693,143 @@ mod callback_binding_tests;
 
 #[cfg(test)]
 mod release_budget_tests;
+
+#[cfg(test)]
+mod fee_schedule_concurrency_tests {
+    use super::*;
+    use soroban_sdk::testutils::{Address as _, Ledger as _};
+
+    fn prepare_contract(env: &Env) -> Address {
+        let admin = Address::generate(env);
+        let contract_id = env.register(LiquifactEscrow, ());
+        env.as_contract(&contract_id, || {
+            env.storage().instance().set(
+                &DataKey::Escrow,
+                &InvoiceEscrow {
+                    invoice_id: symbol_short!("fee"),
+                    admin: admin.clone(),
+                    sme_address: Address::generate(env),
+                    payer: admin.clone(),
+                    amount: 1,
+                    funding_target: 1,
+                    funded_amount: 0,
+                    yield_bps: 0,
+                    maturity: 0,
+                    status: 0,
+                    dispute_active: false,
+                },
+            );
+        });
+        contract_id
+    }
+
+    fn set_sequence(env: &Env, sequence_number: u32) {
+        let mut ledger = env.ledger().get();
+        ledger.sequence_number = sequence_number;
+        env.ledger().set(ledger);
+    }
+
+    fn schedule(fee_bps: u32, activation_ledger: u32) -> FeeSchedule {
+        FeeSchedule {
+            fee_bps,
+            min_fee_bps: 0,
+            max_fee_bps: 10_000,
+            activation_ledger,
+        }
+    }
+
+    #[test]
+    fn duplicate_submission_is_idempotent_before_and_after_activation() {
+        let env = Env::default();
+        env.mock_all_auths();
+        set_sequence(&env, 100);
+        let contract_id = prepare_contract(&env);
+        let client = LiquifactEscrowClient::new(&env, &contract_id);
+        let pending = schedule(250, 102);
+
+        client.submit_fee_schedule(&pending);
+        client.submit_fee_schedule(&pending);
+        assert_eq!(client.get_pending_fee_schedule(), Some(pending.clone()));
+
+        set_sequence(&env, 102);
+        client.submit_fee_schedule(&pending);
+        assert_eq!(client.get_active_fee_schedule(), Some(pending));
+        assert_eq!(client.get_pending_fee_schedule(), None);
+        assert!(!client.activate_fee_schedule());
+    }
+
+    #[test]
+    fn competing_submission_cannot_replace_pending_schedule() {
+        let env = Env::default();
+        env.mock_all_auths();
+        set_sequence(&env, 100);
+        let contract_id = prepare_contract(&env);
+        let client = LiquifactEscrowClient::new(&env, &contract_id);
+        let pending = schedule(250, 105);
+        client.submit_fee_schedule(&pending);
+
+        let competing = schedule(300, 106);
+        assert!(client.try_submit_fee_schedule(&competing).is_err());
+        assert_eq!(client.get_pending_fee_schedule(), Some(pending));
+    }
+
+    #[test]
+    fn activation_boundary_and_repeated_activation_are_deterministic() {
+        let env = Env::default();
+        env.mock_all_auths();
+        set_sequence(&env, 100);
+        let contract_id = prepare_contract(&env);
+        let client = LiquifactEscrowClient::new(&env, &contract_id);
+        let first = schedule(250, 102);
+        client.submit_fee_schedule(&first);
+
+        set_sequence(&env, 101);
+        assert!(!client.activate_fee_schedule());
+        assert_eq!(client.get_active_fee_schedule(), None);
+        assert_eq!(client.get_pending_fee_schedule(), Some(first.clone()));
+
+        set_sequence(&env, 102);
+        assert!(client.activate_fee_schedule());
+        assert_eq!(client.get_active_fee_schedule(), Some(first.clone()));
+        assert!(!client.activate_fee_schedule());
+        assert!(client
+            .try_submit_fee_schedule(&schedule(275, 102))
+            .is_err());
+        assert_eq!(client.get_active_fee_schedule(), Some(first.clone()));
+
+        let second = schedule(300, 104);
+        client.submit_fee_schedule(&second);
+        set_sequence(&env, 104);
+        assert!(client.activate_fee_schedule());
+        assert_eq!(client.get_active_fee_schedule(), Some(second));
+        assert_eq!(client.get_previous_fee_schedule(), Some(first));
+    }
+
+    #[test]
+    fn rejected_submission_does_not_partially_promote_due_schedule() {
+        let env = Env::default();
+        env.mock_all_auths();
+        set_sequence(&env, 100);
+        let contract_id = prepare_contract(&env);
+        let client = LiquifactEscrowClient::new(&env, &contract_id);
+        let pending = schedule(250, 102);
+        client.submit_fee_schedule(&pending);
+
+        set_sequence(&env, 102);
+        let invalid = FeeSchedule {
+            fee_bps: 10_001,
+            min_fee_bps: 0,
+            max_fee_bps: 10_000,
+            activation_ledger: 105,
+        };
+        assert!(client.try_submit_fee_schedule(&invalid).is_err());
+        assert_eq!(client.get_active_fee_schedule(), Some(pending.clone()));
+        assert_eq!(client.get_previous_fee_schedule(), None);
+
+        assert!(client.activate_fee_schedule());
+        assert_eq!(client.get_active_fee_schedule(), Some(pending));
+    }
+}
 
 /// Default starting balance assigned to any address that has never been seen by the
 /// [`DefaultMockToken`] contract.
