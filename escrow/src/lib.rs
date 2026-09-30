@@ -243,6 +243,11 @@ pub struct CloseFinalizedEvt {
 const CLOSED_KEY: &str = "EscrowClosed";
 /// Storage key that holds close metadata.
 const CLOSE_METADATA_KEY: &str = "CloseMetadata";
+/// Stable symbol for the one-shot closed flag. Precomputed so every call path
+/// pays the same deterministic cost and cannot diverge on symbol construction.
+const CLOSED_SYMBOL: Symbol = symbol_short!("closed");
+/// Stable symbol for stored close metadata. See [`CLOSED_SYMBOL`].
+const CLOSE_METADATA_SYMBOL: Symbol = symbol_short!("closemet");
 
 #[contractimpl]
 impl LiquifactEscrow {
@@ -267,7 +272,7 @@ impl LiquifactEscrow {
         let admin = escrow.admin;
         admin.require_auth();
 
-        if env.storage().instance().has(&Symbol::new(&env, CLOSED_KEY)) {
+        if env.storage().instance().has(&CLOSED_SYMBOL) {
             panic_with_error!(&env, CloseError::AlreadyClosed);
         }
 
@@ -282,7 +287,7 @@ impl LiquifactEscrow {
             panic_with_error!(&env, CloseError::ActiveBalance);
         }
 
-        if env.storage().instance().get(&DataKey::Dispute).unwrap_or(false) {
+        if Self::is_dispute_active(env.clone()) {
             panic_with_error!(&env, CloseError::ActiveDispute);
         }
 
@@ -294,10 +299,10 @@ impl LiquifactEscrow {
 
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, CLOSED_KEY), &true);
+            .set(&CLOSED_SYMBOL, &true);
         env.storage()
             .instance()
-            .set(&Symbol::new(&env, CLOSE_METADATA_KEY), &metadata);
+            .set(&CLOSE_METADATA_SYMBOL, &metadata);
 
         CloseFinalizedEvt {
             name: symbol_short!("close"),
@@ -310,7 +315,7 @@ impl LiquifactEscrow {
     pub fn get_closure_metadata(env: Env) -> Option<CloseMetadata> {
         env.storage()
             .instance()
-            .get(&Symbol::new(&env, CLOSE_METADATA_KEY))
+            .get(&CLOSE_METADATA_SYMBOL)
     }
 
     /// Toggles the dispute active flag. Bumps TTL by the disputed threshold.
@@ -320,6 +325,11 @@ impl LiquifactEscrow {
         escrow.admin.require_auth();
         escrow.dispute_active = active;
         env.storage().instance().set(&DataKey::Escrow, &escrow);
+        // Mirror the flag into the dedicated dispute key so every reader
+        // (`close_escrow`, `is_dispute_active`, guards) observes one source of
+        // truth. Without this, a dispute set here would be invisible to
+        // `close_escrow` and could allow a close during an active dispute.
+        env.storage().instance().set(&DataKey::Dispute, &active);
         extend_ttl_for_activity(&env, &escrow, None);
     }
 }
