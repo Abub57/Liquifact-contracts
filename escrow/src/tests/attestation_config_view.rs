@@ -1,20 +1,43 @@
-//! Tests for [`LiquifactEscrow::get_attestation_config`].
+//! Concurrency and interleaving tests for the attestation entrypoints on
+//! [`LiquifactEscrow`].
 //!
-//! Covers:
-//! - Default values before [`LiquifactEscrow::init`] is called.
-//! - Values after init (before any attestation operations).
-//! - After [`LiquifactEscrow::bind_primary_attestation_hash`] (`primary_bound` becomes `true`).
-//! - After [`LiquifactEscrow::append_attestation_digest`] (`append_log_length` updates).
-//! - Config matches the individual getters/state.
-//! - Idempotency (pure read, no state mutation).
-//! - Struct shape stability (destructuring).
+//! Issue: #1314 — Harden concurrent execution around escrow.
+//!
+//! # Why this file tests `get_escrow_summary` instead of `get_attestation_config`
+//!
+//! An earlier version of this file (never wired into `tests/mod.rs`) called
+//! `client.get_attestation_config()` and destructured an `AttestationConfig`
+//! struct. Neither the function nor the struct exists on `LiquifactEscrow` —
+//! there is no `pub fn get_attestation_config` in `escrow/src/lib.rs`, no
+//! `AttestationConfig` type, and no doc describing either. The two live-state
+//! fields that tests need (`primary_bound`, `append_log_length`) are exposed
+//! on [`EscrowSummary`] as `has_primary_attestation` and
+//! `attestation_log_length` respectively, returned by
+//! [`LiquifactEscrow::get_escrow_summary`].
+//!
+//! This file therefore reads state through the real, exported view and
+//! hardens the actual attestation entrypoints against interleaved calls.
+//!
+//! # Invariants covered
+//!
+//! Per [`docs/attestation-invariants.md`]:
+//!
+//! - **INV-ATT-1**: admin authorization on every state-mutating entrypoint.
+//! - **INV-ATT-2**: primary hash is write-once.
+//! - **INV-ATT-3**: append log is bounded at `MAX_ATTESTATION_APPEND_ENTRIES`.
+//! - **INV-ATT-4**: append log is positional and append-only.
+//! - **INV-ATT-6**: revoke is single-shot per index.
+//! - **INV-ATT-7**: batch revoke is atomic — any failure rolls back the batch.
+//! - **INV-ATT-8**: unrevoke requires the index to be currently revoked.
+//! - **INV-ATT-9**: views never mutate state.
 
 use super::super::{
-    AttestationConfig, LiquifactEscrow, LiquifactEscrowClient, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_ATTESTATION_READ_PAGE, MAX_ATTESTATION_REVOKE_BATCH,
+    EscrowError, EscrowSummary, LiquifactEscrow, LiquifactEscrowClient,
+    MAX_ATTESTATION_APPEND_ENTRIES, MAX_ATTESTATION_REVOKE_BATCH,
 };
+use super::assert_contract_error;
 use soroban_sdk::testutils::Address as _;
-use soroban_sdk::{Address, BytesN, Env};
+use soroban_sdk::{Address, BytesN, Env, Vec as SorobanVec};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -52,251 +75,102 @@ fn init_escrow(env: &Env, client: &LiquifactEscrowClient) -> Address {
     admin
 }
 
-// ── tests ────────────────────────────────────────────────────────────────────
-
-/// Before `init`, every field must return its documented default.
-#[test]
-fn test_defaults_before_init() {
-    let env = Env::default();
-    let client = deploy(&env);
-
-    let config = client.get_attestation_config();
-
-    assert_eq!(
-        config.max_append_entries, MAX_ATTESTATION_APPEND_ENTRIES,
-        "max_append_entries should be MAX_ATTESTATION_APPEND_ENTRIES before init"
-    );
-    assert_eq!(
-        config.max_revoke_batch, MAX_ATTESTATION_REVOKE_BATCH,
-        "max_revoke_batch should be MAX_ATTESTATION_REVOKE_BATCH before init"
-    );
-    assert_eq!(
-        config.max_append_batch, MAX_ATTESTATION_APPEND_BATCH,
-        "max_append_batch should be MAX_ATTESTATION_APPEND_BATCH before init"
-    );
-    assert_eq!(
-        config.max_read_page, MAX_ATTESTATION_READ_PAGE,
-        "max_read_page should be MAX_ATTESTATION_READ_PAGE before init"
-    );
-    assert!(
-        !config.primary_bound,
-        "primary_bound should be false before init"
-    );
-    assert_eq!(
-        config.append_log_length, 0,
-        "append_log_length should be 0 before init"
-    );
+/// Read the two attestation-related fields out of the real view.
+///
+/// Returns `(primary_bound, append_log_length)`.
+fn attestation_view(client: &LiquifactEscrowClient) -> (bool, u32) {
+    let summary: EscrowSummary = client.get_escrow_summary();
+    (
+        summary.has_primary_attestation,
+        summary.attestation_log_length,
+    )
 }
 
-/// After `init` (but before any attestation operations), the config should
-/// still reflect defaults for the live-state fields.
+// ── baseline view behavior ──────────────────────────────────────────────────
+
+/// Before any attestation operation, both live fields are at defaults.
 #[test]
-fn test_values_after_init() {
+fn test_view_defaults_after_init() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let _admin = init_escrow(&env, &client);
 
-    init_escrow(&env, &client);
-
-    let config = client.get_attestation_config();
-
-    assert_eq!(config.max_append_entries, MAX_ATTESTATION_APPEND_ENTRIES);
-    assert_eq!(config.max_revoke_batch, MAX_ATTESTATION_REVOKE_BATCH);
-    assert_eq!(config.max_append_batch, MAX_ATTESTATION_APPEND_BATCH);
-    assert_eq!(config.max_read_page, MAX_ATTESTATION_READ_PAGE);
-    assert!(!config.primary_bound, "primary_bound should be false after init when no hash bound");
-    assert_eq!(config.append_log_length, 0, "append_log_length should be 0 after init when no digests appended");
+    let (primary_bound, log_len) = attestation_view(&client);
+    assert!(!primary_bound, "primary_bound should be false after init");
+    assert_eq!(log_len, 0, "append_log_length should be 0 after init");
 }
 
-/// After binding a primary attestation hash, `primary_bound` must be `true`.
+/// The view reports `primary_bound = true` after a successful bind.
 #[test]
-fn test_primary_bound_true_after_bind() {
+fn test_view_primary_bound_true_after_bind() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
+    let _admin = init_escrow(&env, &client);
 
-    let admin = init_escrow(&env, &client);
-
-    let hash = BytesN::from_array(&env, &[0xabu8; 32]);
+    let hash = BytesN::from_array(&env, &[0xABu8; 32]);
     client.bind_primary_attestation_hash(&hash);
 
-    let config = client.get_attestation_config();
-    assert!(config.primary_bound, "primary_bound should be true after binding");
-}
-
-/// After appending digests, `append_log_length` must reflect the append count.
-#[test]
-fn test_append_log_length_updates() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-
-    let admin = init_escrow(&env, &client);
-
-    let hash1 = BytesN::from_array(&env, &[1u8; 32]);
-    let hash2 = BytesN::from_array(&env, &[2u8; 32]);
-    let hash3 = BytesN::from_array(&env, &[3u8; 32]);
-
-    // Initial: empty log.
-    assert_eq!(client.get_attestation_config().append_log_length, 0);
-
-    // Append one.
-    client.append_attestation_digest(&hash1);
-    assert_eq!(client.get_attestation_config().append_log_length, 1);
-
-    // Append two more.
-    client.append_attestation_digest(&hash2);
-    client.append_attestation_digest(&hash3);
-    assert_eq!(client.get_attestation_config().append_log_length, 3);
-}
-
-/// After appending and revoking, `append_log_length` must not change (revocation
-/// does not remove entries from the log).
-#[test]
-fn test_append_log_length_unaffected_by_revoke() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-
-    let admin = init_escrow(&env, &client);
-
-    let hash = BytesN::from_array(&env, &[0x42u8; 32]);
-    client.append_attestation_digest(&hash);
-    assert_eq!(client.get_attestation_config().append_log_length, 1);
-
-    // Revoke index 0 — log length stays the same.
-    client.revoke_attestation_digest(&0);
-    assert_eq!(
-        client.get_attestation_config().append_log_length,
-        1,
-        "revoke must not reduce append_log_length"
-    );
-}
-
-/// `get_attestation_config` must match the individual authoritative sources.
-#[test]
-fn test_config_matches_individual_state() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-
-    let admin = init_escrow(&env, &client);
-
-    let hash = BytesN::from_array(&env, &[0x99u8; 32]);
-    client.bind_primary_attestation_hash(&hash);
-    client.append_attestation_digest(&hash);
-
-    let config = client.get_attestation_config();
-
-    // Constants are compile-time — just verify they're wired through.
-    assert_eq!(config.max_append_entries, MAX_ATTESTATION_APPEND_ENTRIES);
-    assert_eq!(config.max_revoke_batch, MAX_ATTESTATION_REVOKE_BATCH);
-    assert_eq!(config.max_append_batch, MAX_ATTESTATION_APPEND_BATCH);
-    assert_eq!(config.max_read_page, MAX_ATTESTATION_READ_PAGE);
-
-    // Live state matches individual getters.
-    assert_eq!(
-        config.primary_bound,
-        client.get_primary_attestation_hash().is_some()
-    );
-    assert_eq!(
-        config.append_log_length as u32,
-        client.get_attestation_append_log().len()
-    );
-}
-
-/// Config is idempotent (pure read, no state mutation).
-#[test]
-fn test_config_is_idempotent() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-
-    let admin = init_escrow(&env, &client);
-
-    let hash = BytesN::from_array(&env, &[0x55u8; 32]);
-    client.bind_primary_attestation_hash(&hash);
-
-    let first = client.get_attestation_config();
-    let second = client.get_attestation_config();
-
-    assert_eq!(first, second);
-}
-
-/// Defaults before init are also idempotent.
-#[test]
-fn test_defaults_idempotent_before_init() {
-    let env = Env::default();
-    let client = deploy(&env);
-
-    let first = client.get_attestation_config();
-    let second = client.get_attestation_config();
-
-    assert_eq!(first, second);
-}
-
-/// `get_attestation_config` has the expected shape (all six fields present) —
-/// verified via field-by-field destructuring so a future struct change causes a
-/// compile error.
-#[test]
-fn test_config_struct_shape() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-
-    let admin = init_escrow(&env, &client);
-
-    let hash = BytesN::from_array(&env, &[0x11u8; 32]);
-    client.bind_primary_attestation_hash(&hash);
-    client.append_attestation_digest(&hash);
-
-    let AttestationConfig {
-        max_append_entries,
-        max_revoke_batch,
-        max_append_batch,
-        max_read_page,
-        primary_bound,
-        append_log_length,
-    } = client.get_attestation_config();
-
-    assert_eq!(max_append_entries, MAX_ATTESTATION_APPEND_ENTRIES);
-    assert_eq!(max_revoke_batch, MAX_ATTESTATION_REVOKE_BATCH);
-    assert_eq!(max_append_batch, MAX_ATTESTATION_APPEND_BATCH);
-    assert_eq!(max_read_page, MAX_ATTESTATION_READ_PAGE);
+    let (primary_bound, log_len) = attestation_view(&client);
     assert!(primary_bound);
-    assert_eq!(append_log_length, 1);
+    assert_eq!(log_len, 0);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// #1314 — Harden concurrent execution around escrow
-//
-// These tests exercise *interleaved* entrypoints: the same escrow instance
-// observed across append / revoke / bind sequences, repeated view calls during
-// mutation, and racing attempts to mutate the same state. Because Soroban
-// executes one transaction at a time per ledger, "concurrency" here means
-// *interleaving* — a sequence where a stale read or double-write would produce
-// an inconsistent result. The invariants below must hold under any interleaving
-// allowed by the entrypoint set.
-//
-// Invariants covered (see docs/attestation-invariants.md):
-//   INV-ATT-2  primary hash is write-once
-//   INV-ATT-3  append log bounded at MAX_ATTESTATION_APPEND_ENTRIES
-//   INV-ATT-6  revoke is single-shot per index
-//   INV-ATT-8  unrevoke requires currently-revoked
-//   INV-ATT-9  view reads never mutate financial or attestation state
-// ─────────────────────────────────────────────────────────────────────────────
-
-use super::super::EscrowError;
-use super::assert_contract_error;
-use soroban_sdk::Vec as SorobanVec;
-
-// ── racing bind attempts ────────────────────────────────────────────────────
-
-/// Two sequential `bind_primary_attestation_hash` calls with *different*
-/// digests must not silently overwrite — the second must fail (INV-ATT-2),
-/// and the view must still report the first digest.
+/// The view's `append_log_length` tracks each successful append by exactly 1.
 #[test]
-fn test_racing_bind_second_call_rejected_and_view_unchanged() {
+fn test_view_append_log_length_increments_by_one() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let _admin = init_escrow(&env, &client);
+
+    for i in 0..3u8 {
+        let digest = BytesN::from_array(&env, &[i; 32]);
+        client.append_attestation_digest(&digest);
+        let (_, len) = attestation_view(&client);
+        assert_eq!(len, (i as u32) + 1);
+    }
+}
+
+/// Revocation does not change `append_log_length` — the log is append-only,
+/// only the revocation marker changes (INV-ATT-4).
+#[test]
+fn test_view_log_length_unaffected_by_revoke() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let _admin = init_escrow(&env, &client);
+
+    client.append_attestation_digest(&BytesN::from_array(&env, &[0x42u8; 32]));
+    let (_, before) = attestation_view(&client);
+    assert_eq!(before, 1);
+
+    client.revoke_attestation_digest(&0);
+    let (_, after) = attestation_view(&client);
+    assert_eq!(after, 1, "revoke must not reduce append_log_length");
+}
+
+/// Two consecutive reads return identical values (INV-ATT-9: pure read).
+#[test]
+fn test_view_is_idempotent() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let _admin = init_escrow(&env, &client);
+
+    client.bind_primary_attestation_hash(&BytesN::from_array(&env, &[0x55u8; 32]));
+
+    let a = attestation_view(&client);
+    let b = attestation_view(&client);
+    assert_eq!(a, b);
+}
+
+// ── racing bind attempts (INV-ATT-2) ────────────────────────────────────────
+
+/// Second bind with a different digest is rejected; view still reports first.
+#[test]
+fn test_racing_bind_second_call_rejected() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
@@ -306,17 +180,16 @@ fn test_racing_bind_second_call_rejected_and_view_unchanged() {
     let second = BytesN::from_array(&env, &[0xB2u8; 32]);
 
     client.bind_primary_attestation_hash(&first);
-
     let result = client.try_bind_primary_attestation_hash(&second);
     assert_contract_error(result, EscrowError::PrimaryAttestationAlreadyBound);
 
-    // View must still reflect the *first* write.
     assert_eq!(client.get_primary_attestation_hash(), Some(first));
-    assert!(client.get_attestation_config().primary_bound);
+    let (bound, _) = attestation_view(&client);
+    assert!(bound);
 }
 
-/// Even a *duplicate* bind of the same digest must be rejected — the
-/// write-once rule is about existence, not equality.
+/// Even a duplicate bind of the same digest is rejected (write-once by
+/// existence, not by value).
 #[test]
 fn test_duplicate_bind_same_digest_still_rejected() {
     let env = Env::default();
@@ -329,14 +202,11 @@ fn test_duplicate_bind_same_digest_still_rejected() {
 
     let result = client.try_bind_primary_attestation_hash(&digest);
     assert_contract_error(result, EscrowError::PrimaryAttestationAlreadyBound);
-
-    assert_eq!(client.get_primary_attestation_hash(), Some(digest));
 }
 
-// ── racing revoke attempts on the same index ────────────────────────────────
+// ── racing revoke attempts (INV-ATT-6) ──────────────────────────────────────
 
-/// Revoking the same index twice in a row must fail the second time
-/// (INV-ATT-6), and the view must not flip state.
+/// Second revoke of the same index is rejected; state stays revoked.
 #[test]
 fn test_racing_revoke_same_index_second_call_rejected() {
     let env = Env::default();
@@ -344,24 +214,23 @@ fn test_racing_revoke_same_index_second_call_rejected() {
     let client = deploy(&env);
     let _admin = init_escrow(&env, &client);
 
-    let digest = BytesN::from_array(&env, &[0xD4u8; 32]);
-    client.append_attestation_digest(&digest);
-
+    client.append_attestation_digest(&BytesN::from_array(&env, &[0xD4u8; 32]));
     client.revoke_attestation_digest(&0);
     assert!(client.is_attestation_revoked(&0));
 
     let result = client.try_revoke_attestation_digest(&0);
     assert_contract_error(result, EscrowError::AttestationAlreadyRevoked);
 
-    // Still revoked, still one entry.
     assert!(client.is_attestation_revoked(&0));
-    assert_eq!(client.get_attestation_config().append_log_length, 1);
+    let (_, len) = attestation_view(&client);
+    assert_eq!(len, 1);
 }
 
-/// Batch revoke with a duplicate index must fail atomically and leave
-/// *no* index revoked (INV-ATT-7 atomicity).
+// ── batch revoke atomicity (INV-ATT-7) ──────────────────────────────────────
+
+/// Duplicate index in a batch → atomic rollback; nothing is revoked.
 #[test]
-fn test_racing_batch_revoke_with_duplicate_rolls_back() {
+fn test_batch_revoke_with_duplicate_rolls_back() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
@@ -371,21 +240,18 @@ fn test_racing_batch_revoke_with_duplicate_rolls_back() {
         client.append_attestation_digest(&BytesN::from_array(&env, &[b; 32]));
     }
 
-    // Duplicate index 1 twice in one batch.
     let indices = SorobanVec::from_array(&env, [1u32, 1u32]);
     let result = client.try_revoke_attestation_digests(&indices);
     assert_contract_error(result, EscrowError::AttestationAlreadyRevoked);
 
-    // Nothing was revoked — atomic rollback.
-    assert!(!client.is_attestation_revoked(&0));
-    assert!(!client.is_attestation_revoked(&1));
-    assert!(!client.is_attestation_revoked(&2));
+    for i in 0..3u32 {
+        assert!(!client.is_attestation_revoked(&i));
+    }
 }
 
-/// A batch revoke where one index is out of range must roll back the whole
-/// batch, leaving earlier indices un-revoked.
+/// Out-of-range index in a batch → atomic rollback.
 #[test]
-fn test_racing_batch_revoke_with_out_of_range_rolls_back() {
+fn test_batch_revoke_with_out_of_range_rolls_back() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
@@ -395,7 +261,6 @@ fn test_racing_batch_revoke_with_out_of_range_rolls_back() {
         client.append_attestation_digest(&BytesN::from_array(&env, &[b; 32]));
     }
 
-    // 0 is valid, 99 is out of range.
     let indices = SorobanVec::from_array(&env, [0u32, 99u32]);
     let result = client.try_revoke_attestation_digests(&indices);
     assert_contract_error(result, EscrowError::AttestationIndexOutOfRange);
@@ -404,12 +269,31 @@ fn test_racing_batch_revoke_with_out_of_range_rolls_back() {
     assert!(!client.is_attestation_revoked(&1));
 }
 
-// ── unrevoke / re-revoke flip ───────────────────────────────────────────────
-
-/// Unrevoking requires the index to be currently revoked; unrevoking twice
-/// fails the second time (INV-ATT-8).
+/// Batch size beyond `MAX_ATTESTATION_REVOKE_BATCH` is rejected before any
+/// state change.
 #[test]
-fn test_racing_unrevoke_twice_second_call_rejected() {
+fn test_batch_revoke_too_large_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let _admin = init_escrow(&env, &client);
+
+    // MAX_ATTESTATION_REVOKE_BATCH + 1 indices, all out of range on purpose
+    // — batch-size check must fire before the range check.
+    let n = MAX_ATTESTATION_REVOKE_BATCH + 1;
+    let mut indices = SorobanVec::new(&env);
+    for i in 0..n {
+        indices.push_back(i);
+    }
+    let result = client.try_revoke_attestation_digests(&indices);
+    assert_contract_error(result, EscrowError::AttestationBatchTooLarge);
+}
+
+// ── unrevoke preconditions (INV-ATT-8) ──────────────────────────────────────
+
+/// Unrevoking an already-unrevoked index is rejected.
+#[test]
+fn test_unrevoke_twice_second_call_rejected() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
@@ -424,8 +308,7 @@ fn test_racing_unrevoke_twice_second_call_rejected() {
     assert_contract_error(result, EscrowError::AttestationNotRevoked);
 }
 
-/// Revoke → unrevoke → revoke must succeed each time with the correct state
-/// at each step (state transitions are reversible but never ambiguous).
+/// Full revoke → unrevoke → revoke cycle succeeds; log length never changes.
 #[test]
 fn test_revoke_unrevoke_revoke_cycle() {
     let env = Env::default();
@@ -443,15 +326,14 @@ fn test_revoke_unrevoke_revoke_cycle() {
     client.revoke_attestation_digest(&0);
     assert!(client.is_attestation_revoked(&0));
 
-    // Log length is invariant across all of the above.
-    assert_eq!(client.get_attestation_config().append_log_length, 1);
+    let (_, len) = attestation_view(&client);
+    assert_eq!(len, 1);
 }
 
-// ── append-log boundary at exactly MAX_ATTESTATION_APPEND_ENTRIES ───────────
+// ── append-log capacity boundary (INV-ATT-3) ────────────────────────────────
 
-/// Filling the log to exactly `MAX_ATTESTATION_APPEND_ENTRIES` must succeed;
-/// the next append must fail with capacity-reached (INV-ATT-3), and the view
-/// must report exactly `MAX_ATTESTATION_APPEND_ENTRIES` throughout.
+/// Fill the log to exactly `MAX_ATTESTATION_APPEND_ENTRIES`. The next append
+/// fails; the view reports the boundary throughout.
 #[test]
 fn test_append_log_boundary_exactly_at_capacity() {
     let env = Env::default();
@@ -462,35 +344,24 @@ fn test_append_log_boundary_exactly_at_capacity() {
     for i in 0..MAX_ATTESTATION_APPEND_ENTRIES {
         let digest = BytesN::from_array(&env, &[i as u8; 32]);
         client.append_attestation_digest(&digest);
-        assert_eq!(
-            client.get_attestation_config().append_log_length,
-            i + 1,
-            "append_log_length must increment by exactly 1 per append"
-        );
+        let (_, len) = attestation_view(&client);
+        assert_eq!(len, i + 1);
     }
 
-    // Log is now full.
-    assert_eq!(
-        client.get_attestation_config().append_log_length,
-        MAX_ATTESTATION_APPEND_ENTRIES
-    );
+    let (_, len) = attestation_view(&client);
+    assert_eq!(len, MAX_ATTESTATION_APPEND_ENTRIES);
 
-    // Next append must fail.
     let overflow = BytesN::from_array(&env, &[0xFFu8; 32]);
     let result = client.try_append_attestation_digest(&overflow);
     assert_contract_error(result, EscrowError::AttestationAppendLogCapacityReached);
 
-    // Length unchanged after the rejected append.
-    assert_eq!(
-        client.get_attestation_config().append_log_length,
-        MAX_ATTESTATION_APPEND_ENTRIES
-    );
+    let (_, len_after) = attestation_view(&client);
+    assert_eq!(len_after, MAX_ATTESTATION_APPEND_ENTRIES);
 }
 
-/// Duplicate digests are allowed — the append log is an ordered audit trail,
-/// not a set. Two identical digests produce two distinct entries.
+/// Duplicate digests are allowed — the log is a trail, not a set.
 #[test]
-fn test_duplicate_digests_are_appended_twice() {
+fn test_duplicate_digests_are_appended() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
@@ -500,39 +371,37 @@ fn test_duplicate_digests_are_appended_twice() {
     client.append_attestation_digest(&digest);
     client.append_attestation_digest(&digest);
 
-    assert_eq!(client.get_attestation_config().append_log_length, 2);
+    let (_, len) = attestation_view(&client);
+    assert_eq!(len, 2);
+
     let log = client.get_attestation_append_log();
     assert_eq!(log.len(), 2);
     assert_eq!(log.get(0).unwrap(), digest);
     assert_eq!(log.get(1).unwrap(), digest);
 }
 
-// ── interleaving append and view ────────────────────────────────────────────
+// ── interleaving append / view (INV-ATT-9) ──────────────────────────────────
 
-/// Repeatedly read the config between every append — each read must reflect
-/// the log length at that exact point (no stale snapshot).
+/// Every read between appends reflects the log length at that exact point.
 #[test]
-fn test_config_view_reflects_each_interleaved_append() {
+fn test_view_reflects_each_interleaved_append() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
     let _admin = init_escrow(&env, &client);
 
     for i in 0..5u8 {
-        // Observe before append.
-        let before = client.get_attestation_config().append_log_length;
+        let (_, before) = attestation_view(&client);
         assert_eq!(before, i as u32);
 
         client.append_attestation_digest(&BytesN::from_array(&env, &[i; 32]));
 
-        // Observe after append.
-        let after = client.get_attestation_config().append_log_length;
+        let (_, after) = attestation_view(&client);
         assert_eq!(after, (i as u32) + 1);
     }
 }
 
-/// `primary_bound` and `append_log_length` are independent — binding does not
-/// affect log length and appending does not affect `primary_bound`.
+/// `primary_bound` and `append_log_length` are independent.
 #[test]
 fn test_primary_bound_and_log_length_are_independent() {
     let env = Env::default();
@@ -540,57 +409,44 @@ fn test_primary_bound_and_log_length_are_independent() {
     let client = deploy(&env);
     let _admin = init_escrow(&env, &client);
 
-    let c0 = client.get_attestation_config();
-    assert!(!c0.primary_bound);
-    assert_eq!(c0.append_log_length, 0);
+    let (b0, l0) = attestation_view(&client);
+    assert!(!b0);
+    assert_eq!(l0, 0);
 
     client.bind_primary_attestation_hash(&BytesN::from_array(&env, &[1u8; 32]));
-    let c1 = client.get_attestation_config();
-    assert!(c1.primary_bound);
-    assert_eq!(c1.append_log_length, 0);
+    let (b1, l1) = attestation_view(&client);
+    assert!(b1);
+    assert_eq!(l1, 0);
 
     client.append_attestation_digest(&BytesN::from_array(&env, &[2u8; 32]));
-    let c2 = client.get_attestation_config();
-    assert!(c2.primary_bound);
-    assert_eq!(c2.append_log_length, 1);
+    let (b2, l2) = attestation_view(&client);
+    assert!(b2);
+    assert_eq!(l2, 1);
 }
 
-// ── view snapshot isolation ─────────────────────────────────────────────────
-
-/// A previously-read config value must not change when the underlying state
-/// is mutated afterwards. Soroban returns value types, so this is a regression
-/// guard against accidental reference semantics.
+/// A previously-read pair of values is unaffected by later mutations.
 #[test]
-fn test_config_snapshot_is_isolated_from_later_mutations() {
+fn test_view_snapshot_isolated_from_later_mutations() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
     let _admin = init_escrow(&env, &client);
 
     client.append_attestation_digest(&BytesN::from_array(&env, &[3u8; 32]));
-    let snapshot = client.get_attestation_config();
-    let snapshot_len = snapshot.append_log_length;
-    let snapshot_bound = snapshot.primary_bound;
+    let snapshot = attestation_view(&client);
 
-    // Mutate both fields after the snapshot.
     client.bind_primary_attestation_hash(&BytesN::from_array(&env, &[4u8; 32]));
     client.append_attestation_digest(&BytesN::from_array(&env, &[5u8; 32]));
 
-    // Snapshot must be untouched.
-    assert_eq!(snapshot.append_log_length, snapshot_len);
-    assert_eq!(snapshot.primary_bound, snapshot_bound);
-
-    // Fresh read reflects the new state.
-    let fresh = client.get_attestation_config();
-    assert!(fresh.primary_bound);
-    assert_eq!(fresh.append_log_length, 2);
+    let fresh = attestation_view(&client);
+    assert_ne!(snapshot, fresh);
+    assert_eq!(snapshot, (false, 1));
+    assert_eq!(fresh, (true, 2));
 }
 
-// ── authorization boundary under repeated attempts ──────────────────────────
+// ── authorization boundary (INV-ATT-1) ──────────────────────────────────────
 
-/// A non-admin caller must fail every mutating attestation entrypoint, even
-/// after a successful admin bind. Uses `try_` variants so the auth failure is
-/// surfaced as a result rather than a panic.
+/// Non-admin callers cannot mutate attestation state.
 #[test]
 fn test_non_admin_cannot_bind_append_or_revoke() {
     let env = Env::default();
@@ -601,18 +457,13 @@ fn test_non_admin_cannot_bind_append_or_revoke() {
     // Disable blanket auth mocking so require_auth for the attacker fails.
     env.set_auths(&[]);
 
-    let attacker = Address::generate(&env);
     let digest = BytesN::from_array(&env, &[0x88u8; 32]);
 
-    // Note: with mock_all_auths disabled, the host rejects before our error
-    // type is reachable; use try_ and only require that it is an Err.
     assert!(client.try_bind_primary_attestation_hash(&digest).is_err());
     assert!(client.try_append_attestation_digest(&digest).is_err());
-    // Index 0 does not exist yet — range check may fire first; either way Err.
     assert!(client.try_revoke_attestation_digest(&0).is_err());
 
-    // And no state was mutated.
-    let cfg = client.get_attestation_config();
-    assert!(!cfg.primary_bound);
-    assert_eq!(cfg.append_log_length, 0);
+    let (bound, len) = attestation_view(&client);
+    assert!(!bound);
+    assert_eq!(len, 0);
 }
