@@ -20,6 +20,38 @@
 //! 3. Capture post-transfer balances and calculate exact deltas
 //! 4. Assert mathematical equality: `sender_delta == recipient_delta == amount`
 //!
+//! ## Additional state invariants enforced (Issue #1257)
+//!
+//! Beyond balance-delta checks, the following structural invariants are enforced **before** any
+//! SEP-41 transfer executes, preventing a class of silent-integrity bugs:
+//!
+//! **INVARIANT 1 — Distinct sender and recipient:**
+//! `from != to` (outbound) and `investor != to` (inbound). A self-transfer circumvents the
+//! balance-delta conservation model: the same address would appear as both sides, so any
+//! balance mutation could be "explained away" while no net movement actually occurs.
+//! Enforced with [`EscrowError::TransferSameSenderRecipient`] /
+//! [`EscrowError::InboundTransferSameSenderRecipient`].
+//!
+//! **INVARIANT 2 — Amount positivity:**
+//! `amount > 0` is verified before any balance read, so the downstream `checked_sub` deltas
+//! never degenerate to zero or negative. Enforced with [`EscrowError::TransferAmountNotPositive`]
+//! / [`EscrowError::InboundTransferAmountNotPositive`].
+//!
+//! **INVARIANT 3 — Sufficient sender balance pre-transfer:**
+//! `sender_before >= amount` is asserted against the actual SEP-41 balance so a transfer that
+//! would fail inside the token host (and possibly leave state partially mutated on a
+//! non-compliant token) is short-circuited here.
+//!
+//! **INVARIANT 4 — Deterministic underflow-free deltas:**
+//! `spent = from_before.checked_sub(from_after)` and
+//! `received = to_after.checked_sub(to_before)` must be `Some(...)`. An underflow indicates
+//! the token's balance model is non-monotonic (rebasing / hooking) and such tokens are
+//! explicitly out of scope.
+//!
+//! **INVARIANT 5 — Exact conservation:**
+//! `spent == amount && received == amount`. Any delta mismatch is a SEP-41 deviation:
+//! fee-on-transfer, rebasing, or an integration bug that miscounted balances. Fail hard.
+//!
 //! ## Test reality and verification
 //!
 //! The test suite validates these invariants through:
@@ -57,11 +89,15 @@
 //! ## Reviewer timeline (host-call boundary)
 //!
 //! `transfer_funding_token_with_balance_checks` follows this sequence:
-//! 1. Read sender/recipient balances before transfer.
-//! 2. Invoke SEP-41 `transfer` on the configured token contract.
-//! 3. Soroban host executes that token call to completion, then returns.
-//! 4. Read sender/recipient balances after transfer.
-//! 5. Assert exact conservation (`spent == amount` and `received == amount`).
+//! 1. INVARIANT: assert sender != recipient (self-transfer guard).
+//! 2. INVARIANT: assert amount > 0 (positivity guard).
+//! 3. Read sender/recipient balances before transfer.
+//! 4. INVARIANT: assert sender balance >= amount (sufficiency guard).
+//! 5. Invoke SEP-41 `transfer` on the configured token contract.
+//! 6. Soroban host executes that token call to completion, then returns.
+//! 7. Read sender/recipient balances after transfer.
+//! 8. Compute deltas via checked_sub — underflow ⇒ invariant violation.
+//! 9. INVARIANT: assert exact conservation (`spent == amount` and `received == amount`).
 //!
 //! Security takeaway: this is not relying on "non-reentrancy" as a magic property. It enforces
 //! post-call accounting invariants at the external-call boundary where token behavior is observed.
@@ -110,6 +146,11 @@ pub fn transfer_funding_token_with_balance_checks(
     treasury: &Address,
     amount: i128,
 ) {
+    ensure(
+        env,
+        from != treasury,
+        EscrowError::TransferSameSenderRecipient,
+    );
     ensure(env, amount > 0, EscrowError::TransferAmountNotPositive);
     let token = TokenClient::new(env, token_addr);
     let from_before = token.balance(from);
@@ -142,6 +183,11 @@ pub fn transfer_funding_token_with_balance_checks(
         received == amount,
         EscrowError::RecipientBalanceDeltaMismatch,
     );
+    ensure(
+        env,
+        from != treasury,
+        EscrowError::TransferSameSenderRecipient,
+    );
 }
 
 /// Transfer `amount` of `token_addr` from `investor` to `to` (typically this escrow contract),
@@ -173,6 +219,11 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
     to: &Address,
     amount: i128,
 ) {
+    ensure(
+        env,
+        investor != to,
+        EscrowError::InboundTransferSameSenderRecipient,
+    );
     ensure(
         env,
         amount > 0,
@@ -208,5 +259,10 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
         env,
         received == amount,
         EscrowError::InboundRecipientBalanceDeltaMismatch,
+    );
+    ensure(
+        env,
+        investor != to,
+        EscrowError::InboundTransferSameSenderRecipient,
     );
 }

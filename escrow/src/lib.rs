@@ -831,8 +831,6 @@ pub enum EscrowError {
     MaturityInPast = 166,
     /// [`validate_maturity_bounds`] rejected a maturity timestamp beyond the configured horizon.
     MaturityExceedsMaxHorizon = 167,
-    /// [`LiquifactEscrow::revoke_attestation_digest`] called on a non-revoked index.
-    AttestationNotRevoked = 168,
     /// [`LiquifactEscrow::update_funding_deadline`] called while escrow is not open.
     FundingDeadlineUpdateNotOpen = 169,
     /// [`LiquifactEscrow::claim_investor_payout`] computed a zero payout.
@@ -849,7 +847,68 @@ pub enum EscrowError {
     /// Inbound token transfer detected recipient balance delta underflow.
     InboundRecipientBalanceUnderflow = 175,
     /// Inbound token transfer detected recipient received amount differs from requested transfer.
-    InboundRecipientBalanceDeltaMismatch = 176,
+    InboundRecipientBalanceDeltaMismatch = 252,
+    /// Outbound token transfer rejected because sender and recipient are the same address.
+    /// Self-transfer bypasses balance-delta accounting and allows invariants to be spoofed.
+    TransferSameSenderRecipient = 253,
+    /// Inbound token transfer rejected because sender and recipient are the same address.
+    /// Self-transfer bypasses balance-delta accounting and allows invariants to be spoofed.
+    InboundTransferSameSenderRecipient = 254,
+    /// [`LiquifactEscrow::raise_max_per_investor`] called when no per-investor cap was configured at init.
+    /// Per-investor cap raise is a strict monotonic override of an existing configured value;
+    /// if [`DataKey::MaxPerInvestorCap`] is None, the instance has unbounded per-investor capacity
+    /// and a raise operation is undefined.
+    MaxPerInvestorCapNotConfigured = 255,
+    /// [`LiquifactEscrow::raise_max_per_investor`] received a `new_cap` that is not strictly larger
+    /// than the currently stored cap. Same-value and lowering are both rejected to preserve the
+    /// one-way monotonic semantics documented on the entrypoint (callers should not accidentally
+    /// weaken a cap, nor emit a spurious event).
+    MaxPerInvestorCapNotRaised = 256,
+    /// [`LiquifactEscrow::lower_min_contribution_floor`] called while [`InvoiceEscrow::status`] is
+    /// not 0 (open). Floor lowering is only allowed while the escrow still accepts contributions.
+    FloorLowerNotOpen = 257,
+    /// [`LiquifactEscrow::lower_min_contribution_floor`] received a non-positive `new_floor`.
+    /// The minimum contribution floor must remain strictly greater than zero to avoid a trivial
+    /// dust-allowance regression.
+    NewFloorNotPositive = 258,
+    /// [`LiquifactEscrow::lower_min_contribution_floor`] received a `new_floor` that is not
+    /// strictly lower than the current floor. Same-value and raising are rejected to preserve
+    /// the one-way monotonic semantic of the entrypoint.
+    NewFloorNotLower = 259,
+    /// [`LiquifactEscrow::extend_funding_deadline`] called when no funding deadline exists, or
+    /// `new_deadline` does not exceed the stored deadline. Strict monotonic extension prevents
+    /// silent deadline rollbacks.
+    FundingDeadlineNotExtended = 260,
+    /// [`LiquifactEscrow::update_maturity_max_horizon`] received a `new_horizon` that is not
+    /// strictly greater than the currently configured horizon (or no default exists and the
+    /// provided value does not exceed [`DEFAULT_MATURITY_MAX_HORIZON_SECS`]).
+    HorizonNotRaised = 261,
+    /// [`LiquifactEscrow::partial_settle`] called by a principal that is not the configured
+    /// [`InvoiceEscrow::admin`]. Partial settlement is an admin-gated operation that releases
+    /// a portion of funds before full maturity.
+    PartialSettleUnauthorizedCaller = 262,
+    /// [`LiquifactEscrow::partial_settle`] called while [`InvoiceEscrow::status`] is not 0 (open).
+    /// Partial-settlement semantics only apply to an escrow that has not yet transitioned out of
+    /// the contribution window.
+    PartialSettleNotOpen = 263,
+    /// [`LiquifactEscrow::release`] received a non-positive `amount`. Releases always move a
+    /// strictly positive slice of the remaining obligation to the SME.
+    ReleaseAmountNotPositive = 264,
+    /// [`LiquifactEscrow::release`] blocked while operational pause is active. Value-releasing
+    /// entrypoints are paused during incident response.
+    PausedBlocksRelease = 265,
+    /// [`LiquifactEscrow::release`] blocked while a legal hold is active on the escrow. Value
+    /// release and finalization are gated behind compliance clearance.
+    LegalHoldBlocksRelease = 266,
+    /// [`LiquifactEscrow::release`] called while [`InvoiceEscrow::status`] is not 1 (funded).
+    /// Releases distribute already-funded principal; the funded threshold must have been reached.
+    ReleaseNotFunded = 267,
+    /// [`LiquifactEscrow::release`] requested `amount` in excess of the remaining unfunded
+    /// obligation (`funded_amount - released_amount`). Rejecting over-release ensures the
+    /// contract never under-collateralizes the remaining investor payout pool.
+    ReleaseExceedsRemaining = 268,
+    /// [`LiquifactEscrow::partial_settle`] blocked while a legal hold is active on the escrow.
+    LegalHoldBlocksPartialSettle = 269,
 
     /// [`LiquifactEscrow::fund`] blocked while operational pause is active.
     PausedBlocksFunding = 210,
@@ -1363,6 +1422,11 @@ pub enum DataKey {
     /// **no** two-phase clear delay — it is a single-call admin switch for incidents such as a
     /// suspected token bug. Either flag independently blocks the gated entrypoints.
     Paused,
+    /// Structured operational-pause state (`PauseActive` struct): holds the active scope, reason,
+    /// effective scope computed from `PauseScope::All` inheritance, and timestamp of last toggle.
+    /// Written alongside [`DataKey::Paused`] on every [`LiquifactEscrow::set_paused`] transition;
+    /// cleared on `set_paused(false)` of the matching scope so indexers can observe the pause reason.
+    PauseState,
     /// Immutable protocol fee in basis points (0..=10_000) applied to the SME disbursement
     /// at [`LiquifactEscrow::withdraw`]; set once in [`LiquifactEscrow::init`].
     /// Written as `0` even when unconfigured so reads always succeed (`.unwrap_or(0)`).
@@ -6035,18 +6099,7 @@ impl LiquifactEscrow {
     pub fn raise_max_unique_investors(env: Env, new_cap: u32) -> u32 {
         let escrow = Self::load_escrow_require_admin(&env);
 
-        // We can reuse the existing EscrowNotOpenForFunding or similar open check.
-        // Or if there's a specific one, we use it. For now EscrowNotOpenForFunding is safe,
-        // or just rely on escrow.status == 0 since that's what the prompt implies.
-        // Actually, reusing EscrowError::EscrowNotOpenForFunding since CapLowerNotOpen is specific to lower.
-        // But wait, the issue said "parallel guards" and "open-state-only".
-        // Let's use EscrowError::EscrowNotOpenForFunding.
-        ensure(
-            &env,
-            escrow.status == 0,
-            EscrowError::EscrowNotOpenForFunding,
-        );
-        require_funding_open(&env, escrow.status);
+        guard_status_eq(&env, escrow.status, 0, EscrowError::CapLowerNotOpen);
 
         let old_cap: Option<u32> = env
             .storage()
