@@ -1,4 +1,4 @@
-#allow(
+#[allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -15,15 +15,16 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-}]
-use super:(
+)]
+use super::{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEFGERS,
-SCHEMA_VERSION,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
+    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEFGERS,
+    SCHEMA_VERSION,
 };
 use soroban_sdk::{
     symbol_short,
@@ -35,7 +36,7 @@ use std::fmt::Debug;
 
 pub use soroban_sdk::Symbol;
 
-pub(crate) fn assert_contract_error<T,E>(
+pub(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 ) where
@@ -96,12 +97,13 @@ pub fn deploy_id(env: &Env) -> Address {
     env.register(LiquifactEscrow, ())
 }
 
+/// Returns a freshly deployed escrow client.
 pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     let id = deploy_id(env);
     LiquifactEscrowClient::new(env, &id)
 }
 
-#[allow_dead_code]
+#[allow(dead_code)]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
     let client = LiquifactEscrowClient::new(env, &id);
@@ -130,7 +132,7 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
@@ -158,11 +160,10 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None,
         &None,
         &None,
-        &None, // No funding deadline
         &None,
         &None,
-        &None:<i64,
-        &None::u32,
+        &None::<i64>,
+        &None::<u32>,
     );
 }
 
@@ -201,9 +202,8 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None,
-        &None::<i64,
-        &None::<u32,
+        &None::<i64>,
+        &None::<u32>,
     );
 
     let investor = Address::generate(env);
