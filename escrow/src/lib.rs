@@ -1407,6 +1407,12 @@ pub enum DataKey {
     /// reads as `false`. Written by the dispute lifecycle (admin/off-chain) and checked by
     /// [`LiquifactEscrow::close_escrow`].
     Dispute,
+    /// One-shot flag marking the escrow as closed by [`LiquifactEscrow::close_escrow`].
+    /// Absent ⇒ not closed. Written once; a second close attempt fails with
+    /// [`CloseError::AlreadyClosed`] before any state mutation.
+    Closed,
+    /// Immutable [`CloseMetadata`] captured at close time. Absent ⇒ not closed.
+    CloseMetadata,
 }
 
 // --- Data types ---
