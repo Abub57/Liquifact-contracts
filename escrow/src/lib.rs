@@ -6417,8 +6417,6 @@ impl LiquifactEscrow {
             EscrowError::PausedBlocksFunding,
         );
 
-        investor.require_auth();
-
         ensure(&env, amount > 0, EscrowError::FundingAmountNotPositive);
 
         // Decimal-scale guard: if a token_decimals scale was configured at init,
@@ -6489,9 +6487,9 @@ impl LiquifactEscrow {
             );
         }
 
-        // Hoist UniqueFunderCount read: used for both the cap assertion (below) and the
-        // increment write (after contribution is recorded). A single read covers both uses,
-        // eliminating one storage read on every new-investor funding call.
+        // The active-funder counter may decrease after unfunding, but the investor
+        // index is historical and bounded. Re-funding an indexed address must not
+        // append it again or let the index grow past the hard lifetime ceiling.
         let cur_funder_count: u32 = if prev == 0 {
             env.storage()
                 .instance()
@@ -6500,17 +6498,10 @@ impl LiquifactEscrow {
         } else {
             0 // prev != 0: count is not needed; skip the read entirely.
         };
+        let mut investor_index = None;
+        let mut investor_is_indexed = false;
 
         if prev == 0 {
-            // Hard, unconditional ceiling on distinct participants (issue #1229): bounds the
-            // worst-case release/accounting cost that scales with participant count even when
-            // `max_unique_investors` was not configured at init. New typed error keeps the
-            // failure explicit and append-only.
-            ensure(
-                &env,
-                cur_funder_count < MAX_UNIQUE_INVESTORS,
-                EscrowError::UniqueInvestorHardCapReached,
-            );
             if let Some(cap) = env
                 .storage()
                 .instance()
@@ -6522,6 +6513,30 @@ impl LiquifactEscrow {
                     EscrowError::UniqueInvestorCapReached,
                 );
             }
+
+            let mut index: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&keys::investor_index())
+                .unwrap_or_else(|| Vec::new(&env));
+            for i in 0..index.len() {
+                if index.get(i).unwrap() == investor {
+                    investor_is_indexed = true;
+                    break;
+                }
+            }
+
+            if !investor_is_indexed {
+                ensure(
+                    &env,
+                    index.len() < MAX_UNIQUE_INVESTORS,
+                    EscrowError::UniqueInvestorHardCapReached,
+                );
+            }
+            if !investor_is_indexed {
+                index.push_back(investor.clone());
+            }
+            investor_index = Some(index);
         }
 
         let investor_effective_yield_bps: i64;
@@ -6539,10 +6554,10 @@ impl LiquifactEscrow {
             }
         } else {
             ensure(&env, prev == 0, EscrowError::TieredSecondDeposit);
-            let (eff, lock) =
+            let resolution =
                 Self::effective_yield_for_commitment(&env, escrow.yield_bps, committed_lock_secs);
-            investor_effective_yield_bps = eff;
-            tier_lock_secs = lock;
+            investor_effective_yield_bps = resolution.effective_yield_bps;
+            tier_lock_secs = resolution.matched_lock_secs;
             let now = env.ledger().timestamp();
             claim_nb = if committed_lock_secs == 0 {
                 0u64
@@ -6559,33 +6574,11 @@ impl LiquifactEscrow {
             }
         }
 
-        escrow.funded_amount = escrow
-            .funded_amount
-            .checked_add(amount)
-            .unwrap_or_else(|| fail(&env, EscrowError::FundedAmountOverflow));
-
-        let mut next_status = escrow.status;
-        let mut snapshot_to_write = None;
-        if escrow.status == 0 && escrow.funded_amount >= escrow.funding_target {
-            next_status = 1;
-            if !env.storage().instance().has(&DataKey::FundingCloseSnapshot) {
-                snapshot_to_write = Some(FundingCloseSnapshot {
-                    total_principal: escrow.funded_amount,
-                    funding_target: escrow.funding_target,
-                    closed_at_ledger_timestamp: env.ledger().timestamp(),
-                    closed_at_ledger_sequence: env.ledger().sequence(),
-                });
-            }
-        }
-
-        // 2. require_auth checks
+        // Complete all read-only validation before authorization and mutation.
         investor.require_auth();
         escrow.payer.require_auth();
 
-        // 3. Storage writes
-        Self::set_persistent_investor_contribution(&env, investor.clone(), new_contribution);
-
-        if simple_fund {
+        let resolution = if simple_fund {
             if prev == 0 {
                 Self::set_persistent_investor_effective_yield(
                     &env,
@@ -6617,7 +6610,10 @@ impl LiquifactEscrow {
                 investor_effective_yield_bps,
             );
             Self::set_persistent_investor_claim_not_before(&env, investor.clone(), claim_nb);
-            res
+            YieldResolution {
+                effective_yield_bps: investor_effective_yield_bps,
+                matched_lock_secs: tier_lock_secs,
+            }
         };
         let investor_effective_yield_bps = resolution.effective_yield_bps;
         let tier_lock_secs = resolution.matched_lock_secs;
@@ -6649,20 +6645,19 @@ impl LiquifactEscrow {
         Self::set_persistent_investor_contribution(&env, investor.clone(), new_contribution);
 
         if prev == 0 {
+            let next_funder_count = cur_funder_count
+                .checked_add(1)
+                .unwrap_or_else(|| fail(&env, EscrowError::UniqueInvestorHardCapReached));
             env.storage().instance().set(
                 &DataKey::UniqueFunderCount,
-                &cur_funder_count.saturating_add(1),
+                &next_funder_count,
             );
 
-            let mut index: Vec<Address> = env
-                .storage()
-                .instance()
-                .get(&keys::investor_index())
-                .unwrap_or_else(|| Vec::new(&env));
-            index.push_back(investor.clone());
-            env.storage()
-                .instance()
-                .set(&keys::investor_index(), &index);
+            if !investor_is_indexed {
+                env.storage()
+                    .instance()
+                    .set(&keys::investor_index(), &investor_index.unwrap());
+            }
         }
 
         env.storage().instance().set(&DataKey::Escrow, &escrow);
@@ -6674,7 +6669,7 @@ impl LiquifactEscrow {
         #[cfg(any(test, feature = "testutils"))]
         register_mock_token_if_needed(&env, &token_addr);
 
-        external_calls::transfer_into_escrow_with_balance_checks(
+        external_calls::transfer_funding_token_inbound_with_balance_checks(
             &env,
             &token_addr,
             &investor,
