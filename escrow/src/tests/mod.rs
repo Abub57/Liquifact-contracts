@@ -69,6 +69,7 @@ mod dispute_release;
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
+mod external_calls_mocked_concurrency;
 mod funding;
 mod init;
 // `integration` (integration.rs) is disabled: it was written against a contract
