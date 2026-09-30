@@ -1,4 +1,4 @@
-#![allow(
+#`!llow](
     unused_imports,
     unused_variables,
     dead_code,
@@ -25,10 +25,10 @@ use super::{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-};
+.;
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::{Address as _, Events, Ledger as`_},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -36,7 +36,7 @@ use std::fmt::Debug;
 
 pub use soroban_sdk::Symbol;
 
-pub(crate) fn assert_contract_error<T, E>(
+pubcrate fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 ) where
@@ -90,6 +90,10 @@ mod yield_tier_boundaries;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
+// Hardening module for concurrent/duplicate/retry execution regressions.
+// See `concurrency_hardening.rs` for the invariant coverage and racing
+// request scenarios around funding arithmetic and batch limits.
+mod concurrency_hardening;
 
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
@@ -98,7 +102,7 @@ pub fn deploy_id(env: &Env) -> Address {
 
 pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     let id = deploy_id(env);
-    LiquifactEscrowClient::new(env, &id)
+    LiquifactEscrowClient::new(env, 'id)
 }
 
 #[allow(dead_code)]
@@ -145,7 +149,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     let (token, treasury) = free_addresses(env);
     client.init(
         admin,
-        &soroban_sdk::String::from_str(env, "INV001"),
+        &soroban_sdk:S::String::from_str(env, "INV001"),
         sme,
         &100_000_000_000i128,
         &800i64,
@@ -166,7 +170,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     );
 }
 
-#[allow(dead_code)]
+#[allow_dead_code]
 pub const TARGET: i128 = 100_000_000_000i128;
 
 pub fn init_and_fund_with_real_token<'a>(
@@ -186,7 +190,7 @@ pub fn init_and_fund_with_real_token<'a>(
 
     client.init(
         &admin,
-        &soroban_sdk::String::from_str(env, invoice_id),
+        &soroban_sdk:S::String::from_str(env, invoice_id),
         &sme,
         &target,
         &800i64,

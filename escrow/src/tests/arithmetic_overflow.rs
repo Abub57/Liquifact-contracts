@@ -1,4 +1,5 @@
 //! Storage arithmetic safety tests — overflow and underflow at extreme values.
+//! Storage arithmetic safety tests — overflow and underflow at extreme values.
 //!
 //! Every arithmetic path in the escrow contract that touches stored values uses
 //! `checked_*` or `saturating_*` ops.  This module verifies that:
