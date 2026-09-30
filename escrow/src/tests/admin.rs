@@ -3864,3 +3864,34 @@ fn test_pending_admin_remaining_consistent_with_accept_admin() {
     assert_eq!(client.get_pending_admin_remaining_secs(), Some(0));
     assert_contract_error(client.try_accept_admin(), EscrowError::AdminProposalExpired);
 }
+
+// A recovery is an administrative state transition, not a best-effort cleanup call. It must
+// participate in the same nonce serialization as proposal and cancellation so a delayed retry
+// cannot remove a proposal created after the retry was signed.
+#[test]
+fn test_recover_admin_replay_and_stale_nonce_are_harmless() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let abandoned = Address::generate(&env);
+    client.propose_admin(&abandoned, &0u32);
+    let expiry = client.get_pending_admin_expiry().unwrap();
+    env.ledger().set_timestamp(expiry + 1);
+
+    client.recover_admin(&soroban_sdk::String::from_str(&env, "expired"), &1u32);
+    assert_eq!(client.get_pending_admin(), None);
+    assert_contract_error(
+        client.try_recover_admin(&soroban_sdk::String::from_str(&env, "replay"), &1u32),
+        EscrowError::AdminNonceMismatch,
+    );
+    assert_eq!(client.get_admin_nonce(), 2u32);
+
+    let successor = Address::generate(&env);
+    client.propose_admin(&successor, &2u32);
+    assert_contract_error(
+        client.try_recover_admin(&soroban_sdk::String::from_str(&env, "delayed"), &1u32),
+        EscrowError::AdminNonceMismatch,
+    );
+    assert_eq!(client.get_pending_admin(), Some(successor));
+}
