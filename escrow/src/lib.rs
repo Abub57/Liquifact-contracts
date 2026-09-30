@@ -194,6 +194,20 @@ pub const EVENT_SCHEMA_VERSION: u32 = 1;
 /// Revocation via [`LiquifactEscrow::revoke_attestation_digest`] does not consume a slot.
 pub const MAX_ATTESTATION_APPEND_ENTRIES: u32 = 32;
 
+/// Minimum configurable cap on the attestation append log.
+pub const MIN_ATTESTATION_LIMIT: u32 = 1;
+
+/// Maximum configurable cap on the attestation append log.
+pub const MAX_ATTESTATION_LIMIT: u32 = MAX_ATTESTATION_APPEND_ENTRIES;
+
+/// Default cap used when [`LiquifactEscrow::set_attestation_limit`] has never
+/// been called.
+pub const DEFAULT_ATTESTATION_LIMIT: u32 = MAX_ATTESTATION_APPEND_ENTRIES;
+
+/// Maximum number of digests that can be appended in a single
+/// [`LiquifactEscrow::append_attestation_digests`] call.
+pub const MAX_ATTESTATION_APPEND_BATCH: u32 = 32;
+
 /// Maximum number of indices that can be revoked in a single batch call.
 pub const MAX_ATTESTATION_REVOKE_BATCH: u32 = 32;
 
@@ -244,6 +258,18 @@ const CLOSED_KEY: &str = "EscrowClosed";
 /// Storage key that holds close metadata.
 const CLOSE_METADATA_KEY: &str = "CloseMetadata";
 
+/// Emitted by [`LiquifactEscrow::set_attestation_limit`] when the append-log
+/// cap is changed. Carries the previous and new cap values.
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttestationLimitUpdated {
+    #[topic]
+    pub name: Symbol,
+    pub invoice_id: String,
+    pub old_limit: u32,
+    pub new_limit: u32,
+}
+
 #[contractimpl]
 impl LiquifactEscrow {
     /// Finalizes the escrow after all balance and dispute obligations have settled.
@@ -282,7 +308,12 @@ impl LiquifactEscrow {
             panic_with_error!(&env, CloseError::ActiveBalance);
         }
 
-        if env.storage().instance().get(&DataKey::Dispute).unwrap_or(false) {
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Dispute)
+            .unwrap_or(false)
+        {
             panic_with_error!(&env, CloseError::ActiveDispute);
         }
 
@@ -315,7 +346,10 @@ impl LiquifactEscrow {
 
     /// Toggles the dispute active flag. Bumps TTL by the disputed threshold.
     pub fn set_dispute_active(env: Env, active: bool) {
-        let mut escrow: InvoiceEscrow = env.storage().instance().get(&DataKey::Escrow)
+        let mut escrow: InvoiceEscrow = env
+            .storage()
+            .instance()
+            .get(&DataKey::Escrow)
             .unwrap_or_else(|| panic_with_error!(&env, CloseError::NotInitialized));
         escrow.admin.require_auth();
         escrow.dispute_active = active;
@@ -505,7 +539,11 @@ pub(crate) fn get_lifecycle_ttl(escrow: &InvoiceEscrow) -> u32 {
     }
 }
 
-pub(crate) fn extend_ttl_for_activity(env: &Env, escrow: &InvoiceEscrow, investor: Option<Address>) {
+pub(crate) fn extend_ttl_for_activity(
+    env: &Env,
+    escrow: &InvoiceEscrow,
+    investor: Option<Address>,
+) {
     let ttl = get_lifecycle_ttl(escrow);
     env.storage().instance().extend_ttl(ttl, ttl);
     if let Some(addr) = investor {
@@ -974,6 +1012,18 @@ pub enum EscrowError {
     /// This bounds the worst-case release instruction budget that scales with participant
     /// count when `max_unique_investors` was not configured at init.
     UniqueInvestorHardCapReached = 249,
+
+    /// [`LiquifactEscrow::set_attestation_limit`] received a value outside
+    /// `MIN_ATTESTATION_LIMIT..=MAX_ATTESTATION_LIMIT`.
+    AttestationLimitOutOfRange = 176,
+
+    /// [`LiquifactEscrow::append_attestation_digests`] received an empty
+    /// `digests` vector.
+    AttestationAppendBatchEmpty = 177,
+
+    /// [`LiquifactEscrow::append_attestation_digests`] received more than
+    /// [`MAX_ATTESTATION_APPEND_BATCH`] digests.
+    AttestationAppendBatchTooLarge = 178,
 }
 
 #[inline(always)]
@@ -1327,6 +1377,12 @@ pub enum DataKey {
     /// Absent ΓçÆ not revoked. Written as `true` by [`LiquifactEscrow::revoke_attestation_digest`].
     /// Preserves the original digest for auditability while signalling supersession.
     AttestationRevoked(u32),
+
+    /// Configured cap on the attestation append log, set by
+    /// [`LiquifactEscrow::set_attestation_limit`].
+    /// Absent → [`DEFAULT_ATTESTATION_LIMIT`].
+    AttestationLimit,
+
     /// When true, only allowlisted addresses may call [`LiquifactEscrow::fund`] or [`LiquifactEscrow::fund_with_commitment`].
     AllowlistActive,
     /// Whether a specific address is permitted to fund when [`DataKey::AllowlistActive`] is true.
@@ -3612,7 +3668,11 @@ impl LiquifactEscrow {
     /// | Legal hold active | [`EscrowError::LegalHoldBlocksBeneficiaryRotation`] |
     /// | Escrow not open or funded | [`EscrowError::RotationNotOpen`] |
     /// | `new_sme_address == current SME` | [`EscrowError::NewSmeSameAsCurrent`] |
-    pub fn rotate_beneficiary(env: Env, new_sme_address: Address, expected_nonce: u32) -> InvoiceEscrow {
+    pub fn rotate_beneficiary(
+        env: Env,
+        new_sme_address: Address,
+        expected_nonce: u32,
+    ) -> InvoiceEscrow {
         // Legal-hold gate (read-only).
         guard_not_legal_hold(&env, EscrowError::LegalHoldBlocksBeneficiaryRotation);
 
@@ -3780,10 +3840,14 @@ impl LiquifactEscrow {
             .instance()
             .get(&DataKey::AdminNonce)
             .unwrap_or(0);
-        ensure(env, current == expected_nonce, EscrowError::AdminNonceMismatch);
-        let next = current.checked_add(1).unwrap_or_else(|| {
-            fail(env, EscrowError::AdminNonceMismatch)
-        });
+        ensure(
+            env,
+            current == expected_nonce,
+            EscrowError::AdminNonceMismatch,
+        );
+        let next = current
+            .checked_add(1)
+            .unwrap_or_else(|| fail(env, EscrowError::AdminNonceMismatch));
         env.storage().instance().set(&DataKey::AdminNonce, &next);
     }
 
@@ -3797,6 +3861,99 @@ impl LiquifactEscrow {
             .instance()
             .get(&DataKey::AttestationAppendLog)
             .unwrap_or_else(|| Vec::new(env))
+    }
+
+    /// Admin-only setter for the attestation append-log cap.
+    ///
+    /// # Bounds
+    /// Rejects `limit < MIN_ATTESTATION_LIMIT` or `limit > MAX_ATTESTATION_LIMIT`
+    /// with [`EscrowError::AttestationLimitOutOfRange`].
+    ///
+    /// # Invariants
+    /// - Does not retroactively invalidate existing log entries.
+    /// - Enforcement applies to future `append_attestation_digest` /
+    ///   `append_attestation_digests` calls only.
+    ///
+    /// # Events
+    /// Emits [`AttestationLimitUpdated`] with `old_limit` equal to the value
+    /// before this call (or [`DEFAULT_ATTESTATION_LIMIT`] if never set) and
+    /// `new_limit` equal to `limit`.
+    pub fn set_attestation_limit(env: Env, limit: u32) {
+        let escrow = Self::load_escrow_require_admin(&env);
+        ensure(
+            &env,
+            limit >= MIN_ATTESTATION_LIMIT && limit <= MAX_ATTESTATION_LIMIT,
+            EscrowError::AttestationLimitOutOfRange,
+        );
+        let old_limit = Self::get_attestation_limit(env.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::AttestationLimit, &limit);
+        AttestationLimitUpdated {
+            name: symbol_short!("att_lim"),
+            invoice_id: escrow.invoice_id.clone(),
+            old_limit,
+            new_limit: limit,
+        }
+        .publish(&env);
+    }
+
+    /// Returns the configured attestation append-log cap.
+    ///
+    /// Falls back to [`DEFAULT_ATTESTATION_LIMIT`] when
+    /// [`LiquifactEscrow::set_attestation_limit`] has never been called.
+    pub fn get_attestation_limit(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::AttestationLimit)
+            .unwrap_or(DEFAULT_ATTESTATION_LIMIT)
+    }
+
+    /// Atomically append multiple digests to the bounded attestation append log.
+    ///
+    /// # Guard order
+    /// 1. Empty-batch check  -> [`EscrowError::AttestationAppendBatchEmpty`]
+    /// 2. Batch-size check   -> [`EscrowError::AttestationAppendBatchTooLarge`]
+    /// 3. Admin authorization
+    /// 4. Pre-flight capacity check against the configured limit
+    /// 5. Single atomic write
+    ///
+    /// Any guard failure rolls back the whole call -- no partial append.
+    pub fn append_attestation_digests(env: Env, digests: Vec<BytesN<32>>) {
+        let n = digests.len();
+        ensure(&env, n > 0, EscrowError::AttestationAppendBatchEmpty);
+        ensure(
+            &env,
+            n <= MAX_ATTESTATION_APPEND_BATCH,
+            EscrowError::AttestationAppendBatchTooLarge,
+        );
+
+        let escrow = Self::load_escrow_require_admin(&env);
+        let limit = Self::get_attestation_limit(env.clone());
+        let mut log: Vec<BytesN<32>> = Self::load_attestation_log(&env);
+
+        ensure(
+            &env,
+            log.len() + n <= limit,
+            EscrowError::AttestationAppendLogCapacityReached,
+        );
+
+        for i in 0..n {
+            let digest = digests.get(i).unwrap();
+            let idx = log.len();
+            log.push_back(digest.clone());
+            AttestationDigestAppended {
+                name: symbol_short!("att_app"),
+                invoice_id: escrow.invoice_id.clone(),
+                index: idx,
+                digest,
+            }
+            .publish(&env);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AttestationAppendLog, &log);
     }
 
     /// Assert that `index` falls within the current append-log bounds.
@@ -5672,7 +5829,12 @@ impl LiquifactEscrow {
     /// - [`LiquifactEscrow::is_investor_allowlisted`] — check if an address is allowlisted
     /// - [`LiquifactEscrow::set_investors_allowlisted`] — batch variant for multiple addresses
     /// - [`docs/escrow-allowlist.md`](../docs/escrow-allowlist.md) — full allowlist model documentation
-    pub fn set_investor_allowlisted(env: Env, investor: Address, allowed: bool, expected_nonce: u32) {
+    pub fn set_investor_allowlisted(
+        env: Env,
+        investor: Address,
+        allowed: bool,
+        expected_nonce: u32,
+    ) {
         let escrow = Self::load_escrow_require_admin(&env);
         Self::consume_admin_nonce(&env, expected_nonce);
         env.storage()
@@ -5728,7 +5890,12 @@ impl LiquifactEscrow {
     /// - [`LiquifactEscrow::set_investor_allowlisted`] — single-address variant
     /// - [`LiquifactEscrow::is_investor_allowlisted`] — check if an address is allowlisted
     /// - [`docs/escrow-allowlist.md`](../docs/escrow-allowlist.md) — full allowlist model documentation
-    pub fn set_investors_allowlisted(env: Env, investors: Vec<Address>, allowed: bool, expected_nonce: u32) {
+    pub fn set_investors_allowlisted(
+        env: Env,
+        investors: Vec<Address>,
+        allowed: bool,
+        expected_nonce: u32,
+    ) {
         let escrow = Self::load_escrow_require_admin(&env);
         Self::consume_admin_nonce(&env, expected_nonce);
 
