@@ -1,4 +1,4 @@
-#allow(dead_code)
+#![allow(dead_code)]
 /// Centralized constructors for funding-related storage keys.
 ///
 /// # Purpose
@@ -31,7 +31,7 @@ use crate::DataKey;
 use soroban_sdk::Address;
 
 /// Per-investor persistent principal recorded by `fund` / `fund_with_commitment` / `fund_batch`.
-pubc(crate) fn investor_contribution(investor: Address) -> DataKey {
+pub(crate) fn investor_contribution(investor: Address) -> DataKey {
     DataKey::InvestorContribution(investor)
 }
 
@@ -46,7 +46,7 @@ pub(crate) fn investor_claim_not_before(investor: Address) -> DataKey {
 }
 
 /// Per-investor persistent claimed-payout marker.
-pubc(crate) fn investor_claimed(investor: Address) -> DataKey {
+pub(crate) fn investor_claimed(investor: Address) -> DataKey {
     DataKey::InvestorClaimed(investor)
 }
 
@@ -56,27 +56,27 @@ pub(crate) fn min_contribution_floor() -> DataKey {
 }
 
 /// Instance-storage cap on distinct investor addresses (absent = unlimited).
-pubc(crate) fn max_unique_investors_cap() -> DataKey {
+pub(crate) fn max_unique_investors_cap() -> DataKey {
     DataKey::MaxUniqueInvestorsCap
 }
 
 /// Instance-storage cap on total principal for a single investor address (absent = unlimited).
-pubc(crate) fn max_per_investor_cap() -> DataKey {
+pub(crate) fn max_per_investor_cap() -> DataKey {
     DataKey::MaxPerInvestorCap
 }
 
 /// Instance-storage count of distinct investor addresses that have funded so far.
-pubc(crate) fn unique_funder_count() -> DataKey {
+pub(crate) fn unique_funder_count() -> DataKey {
     DataKey::UniqueFunderCount
 }
 
 /// Instance-storage ordered list of investor addresses backing paginated enumeration.
-pubc(crate) fn investor_index() -> DataKey {
+pub(crate) fn investor_index() -> DataKey {
     DataKey::InvestorIndex
 }
 
 /// Instance-storage optional funding deadline timestamp (absent = no deadline).
-pubc(crate) fn funding_deadline() -> DataKey {
+pub(crate) fn funding_deadline() -> DataKey {
     DataKey::FundingDeadline
 }
 
@@ -94,7 +94,7 @@ pub(crate) fn funding_token() -> DataKey {
 ///
 /// Absent when the escrow was initialized without a `token_decimals` value; in that case
 /// scale validation is skipped for backward compatibility (additive-key, ADR-007).
-pubc(crate) fn funding_token_scale() -> DataKey {
+pub(crate) fn funding_token_scale() -> DataKey {
     DataKey::FundingTokenScale
 }
 
