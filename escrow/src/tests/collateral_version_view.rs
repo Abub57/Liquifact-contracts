@@ -186,13 +186,13 @@ fn test_get_collateral_version_unchanged_after_record_collateral() {
     let before = client.get_collateral_version();
 
     // Record a collateral commitment.
-    client.record_sme_collateral_commitment(
-        &soroban_sdk::Symbol::new(&env, "GOLD"),
-        &500_000i128,
-    );
+    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
 
     let after = client.get_collateral_version();
-    assert_eq!(before, after, "recording collateral must not change the schema version");
+    assert_eq!(
+        before, after,
+        "recording collateral must not change the schema version"
+    );
 }
 
 /// Clearing a collateral commitment must not alter the version.
@@ -202,16 +202,16 @@ fn test_get_collateral_version_unchanged_after_clear_collateral() {
     env.mock_all_auths();
     let (client, _admin, sme) = deploy_and_init(&env);
 
-    client.record_sme_collateral_commitment(
-        &soroban_sdk::Symbol::new(&env, "GOLD"),
-        &500_000i128,
-    );
+    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
 
     let before = client.get_collateral_version();
     client.clear_sme_collateral_commitment();
     let after = client.get_collateral_version();
 
-    assert_eq!(before, after, "clearing collateral must not change the schema version");
+    assert_eq!(
+        before, after,
+        "clearing collateral must not change the schema version"
+    );
 }
 
 /// Setting the collateral limit must not alter the version.
@@ -225,7 +225,10 @@ fn test_get_collateral_version_unchanged_after_set_collateral_limit() {
     client.set_collateral_limit(&1_000_000i128);
     let after = client.get_collateral_version();
 
-    assert_eq!(before, after, "set_collateral_limit must not change the schema version");
+    assert_eq!(
+        before, after,
+        "set_collateral_limit must not change the schema version"
+    );
 }
 
 // ── Failure recovery / determinism ────────────────────────────────────────────
@@ -244,16 +247,16 @@ fn test_get_collateral_version_stable_across_failed_write() {
     // Attempt an invalid write (zero amount is rejected by validation).
     // The call must fail without mutating the version key.
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.record_sme_collateral_commitment(
-            &soroban_sdk::Symbol::new(&env, "GOLD"),
-            &0i128,
-        );
+        client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &0i128);
     }));
     assert!(result.is_err(), "invalid collateral write must be rejected");
 
     // Version must be unchanged and reads must remain deterministic.
     let after = client.get_collateral_version();
-    assert_eq!(before, after, "failed write must not alter the schema version");
+    assert_eq!(
+        before, after,
+        "failed write must not alter the schema version"
+    );
     assert_eq!(client.get_collateral_version(), after);
 }
 
@@ -270,10 +273,7 @@ fn test_get_collateral_version_deterministic_across_mutations() {
     client.set_collateral_limit(&1_000_000i128);
     assert_eq!(client.get_collateral_version(), baseline);
 
-    client.record_sme_collateral_commitment(
-        &soroban_sdk::Symbol::new(&env, "GOLD"),
-        &500_000i128,
-    );
+    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
     assert_eq!(client.get_collateral_version(), baseline);
 
     client.clear_sme_collateral_commitment();
