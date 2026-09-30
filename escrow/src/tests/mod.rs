@@ -1,3 +1,4 @@
+#![allow(clippy::too_many_arguments)]
 #![allow(
     unused_imports,
     unused_variables,
@@ -22,6 +23,7 @@ use super::{
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
+    MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
@@ -31,6 +33,7 @@ use soroban_sdk::{
     testutils::{Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
+    Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
 
@@ -39,6 +42,7 @@ pub use soroban_sdk::Symbol;
 pub(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
+    // Compare by discriminant so callers can pass any EscrowError variant.
 ) where
     T: Debug,
     E: Debug,
@@ -60,6 +64,7 @@ pub(crate) fn assert_contract_error<T, E>(
 mod admin;
 mod attestations;
 mod auth_matrix;
+mod concurrent_execution;
 mod cap_validation;
 // mod collateral_boundary_tests; // file not present in this tree
 // mod collateral_config_view;    // file not present in this tree
@@ -213,4 +218,18 @@ pub fn init_and_fund_with_real_token<'a>(
     sac_admin.mint(&escrow_id, &target);
 
     (client, escrow_id, sme)
+}
+
+/// Deterministic helper for concurrent-execution tests: seeds a fresh Env with
+/// a fixed ledger sequence and timestamp so racing scenarios are reproducible.
+pub fn setup_deterministic(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
+    let mut ledger_info = env.ledger().get();
+    ledger_info.timestamp = 1_700_000_000;
+    ledger_info.sequence_number = 1_000;
+    env.ledger().set(ledger_info);
+    env.mock_all_auths();
+    let client = deploy(env);
+    let admin = Address::generate(env);
+    let sme = Address::generate(env);
+    (client, admin, sme)
 }

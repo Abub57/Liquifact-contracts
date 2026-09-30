@@ -29,6 +29,12 @@ pub enum EscrowError {
     TokenBalanceUnderflow = 39,
     TokenBalanceOverflow = 40,
     TokenWrapperInvariantViolation = 41,
+    /// A concurrent or replayed mutation was detected against a stale escrow
+    /// snapshot. Callers must re-read state and retry idempotently.
+    ConcurrentMutationDetected = 42,
+    /// A duplicate request was observed for an operation that must execute at
+    /// most once per (caller, nonce) pair. Safe to treat as a no-op on retry.
+    DuplicateRequest = 43,
 
     // ------------------------------------------------------------------------------
     // Funding & Contribution Errors (50..69)
@@ -45,6 +51,9 @@ pub enum EscrowError {
     /// Registry/reference metadata may not be rebound after funding begins; this
     /// prevents changing off-chain pointers that clients use to reconcile identity.
     RegistryImmutableAfterFunding = 56,
+    /// The escrow state changed between the caller's read and the attempted
+    /// write. Retry after re-reading; do not assume the prior snapshot is valid.
+    StaleStateVersion = 57,
 
     // -------------------------------------------------------------------------------
     // Batch Operations Errors (80..89)
@@ -53,9 +62,15 @@ pub enum EscrowError {
     FundingBatchExceedsLimit = 81,
     FundingBatchInvalidAmount = 82,
     FundingBatchDuplicateInvestor = 84,
+    /// A batch contained the same investor more than once. Rejected to keep
+    /// per-investor accounting deterministic under concurrent submissions.
+    FundingBatchDuplicateEntry = 83,
 
     ClaimBatchEmpty = 85,
     ClaimBatchExceedsLimit = 86,
+    /// A claim batch contained a duplicate investor entry; rejected to prevent
+    /// double-crediting under retried or racing submissions.
+    ClaimBatchDuplicateEntry = 87,
 
     // ------------------------------------------------------------------------------
     // Migration & Upgrade Errors (90..99)
@@ -63,6 +78,8 @@ pub enum EscrowError {
     MigrationVersionMismatch = 90,
     AlreadyCurrentSchemaVersion = 91,
     NoMigrationPath = 92,
+    /// A migration was attempted while another migration held the schema lock.
+    MigrationInProgress = 93,
 
     // ------------------------------------------------------------------------------
     // Settlement & Bounds Validation Errors (100..109)
@@ -71,17 +88,26 @@ pub enum EscrowError {
     MaturityNotReached = 101,
     EscrowNotInFundedState = 102,
     WithdrawAmountInvalid = 103,
+    /// A settlement or withdrawal was attempted against a superseded state
+    /// version. Re-read state and retry; the prior computation is invalid.
+    SettlementStaleState = 104,
 
     // ------------------------------------------------------------------------------
     // Legal Hold & Operational Pause (200..209)
     // ------------------------------------------------------------------------------
     LegalHoldActive = 200,
     ContractPaused = 201,
+    /// A pause/unpause toggle raced with another toggle and was rejected to
+    /// preserve the configured rate-limit invariant.
+    PauseToggleRaced = 202,
 
     // -------------------------------------------------------------------------------
     // SME Collateral Errors (300..309)
     // ------------------------------------------------------------------------------
     NoCollateralToClear = 300,
+    /// Collateral clearing raced with a concurrent mutation; retry after
+    /// re-reading collateral state.
+    CollateralStaleState = 301,
 
     // ------------------------------------------------------------------------------
     // Pause Configuration & Rate-Limit Errors (230..239)
@@ -114,4 +140,7 @@ pub enum EscrowError {
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
+    /// A fee schedule mutation raced with activation of the pending schedule;
+    /// retry after re-reading the active/pending schedule state.
+    FeeScheduleStaleState = 246,
 }
