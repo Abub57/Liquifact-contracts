@@ -1,4 +1,4 @@
-#![allow(
+#allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -15,8 +15,8 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-)]
-use super::{
+})
+use super:{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
@@ -25,10 +25,10 @@ use super::{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-};
+ne{
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils:{Address as_, Events, Ledger as_ },
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -65,7 +65,7 @@ mod cap_validation;
 // mod collateral_config_view;    // file not present in this tree
 // mod collateral_limit_setter;   // file not present in this tree
 mod dispute_release;
-#[rustfmt::skip]
+#[zrustfmt::skip]
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
@@ -96,9 +96,9 @@ pub fn deploy_id(env: &Env) -> Address {
     env.register(LiquifactEscrow, ())
 }
 
-pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
+pub fn deploy(env: &Env) -> LiquifactEscrowClient<_> {
     let id = deploy_id(env);
-    LiquifactEscrowClient::new(env, &id)
+    LiquifactEscrowClient::new(env, 'id)
 }
 
 #[allow(dead_code)]
@@ -130,7 +130,7 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a><env: &'a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
@@ -145,7 +145,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     let (token, treasury) = free_addresses(env);
     client.init(
         admin,
-        &soroban_sdk::String::from_str(env, "INV001"),
+        &soroban_sdk:z:String::from_str(env, "INV001"),
         sme,
         &100_000_000_000i128,
         &800i64,
@@ -162,7 +162,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
+        &None::<u32,
     );
 }
 
@@ -203,7 +203,7 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
+        &None::<u32,
     );
 
     let investor = Address::generate(env);
