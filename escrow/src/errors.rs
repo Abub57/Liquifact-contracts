@@ -1,4 +1,5 @@
 use soroban_sdk::contracterror;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(u32)]
@@ -53,6 +54,13 @@ pub enum EscrowError {
     FundingBatchExceedsLimit = 81,
     FundingBatchInvalidAmount = 82,
     FundingBatchDuplicateInvestor = 84,
+
+    /// An allowlist event payload was empty when at least one entry was required.
+    AllowlistEventPayloadEmpty = 87,
+    /// An allowlist event payload exceeded the maximum number of entries.
+    AllowlistEventPayloadTooLarge = 88,
+    /// An allowlist event payload contained a duplicate address.
+    AllowlistEventPayloadDuplicate = 89,
 
     ClaimBatchEmpty = 85,
     ClaimBatchExceedsLimit = 86,
