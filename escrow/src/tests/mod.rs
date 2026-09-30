@@ -1,4 +1,4 @@
-#![allow(
+#allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -15,7 +15,7 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-)]
+}
 use super::{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
@@ -25,10 +25,10 @@ use super::{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-};
-use soroban_sdk::{
+ne};
+use soroban_sdk:{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils:{Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -36,7 +36,7 @@ use std::fmt::Debug;
 
 pub use soroban_sdk::Symbol;
 
-pub(crate) fn assert_contract_error<T, E>(
+pubcrute fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 ) where
@@ -45,11 +45,11 @@ pub(crate) fn assert_contract_error<T, E>(
 {
     let expected_code = expected as u32;
     match result {
-        Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+        Err(::Ok(error)) => {
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
-        Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+        Err(Err:InvokeError::Contract(code))) => {
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -90,6 +90,11 @@ mod yield_tier_boundaries;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
+// Allowlist event payload compatibility contracts. This module is the
+// authoritative regression guard for the event payloads emitted by the
+// allowlist lifecycle (add/remove/read) so downstream indexers and
+// audit tooling can rely on stable field ordering, types, and semantics.
+mod allowlist_event_payloads;
 
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
@@ -101,7 +106,7 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     LiquifactEscrowClient::new(env, &id)
 }
 
-#[allow(dead_code)]
+#[allow_dead_code]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
     let client = LiquifactEscrowClient::new(env, &id);
@@ -130,7 +135,7 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
@@ -186,7 +191,7 @@ pub fn init_and_fund_with_real_token<'a>(
 
     client.init(
         &admin,
-        &soroban_sdk::String::from_str(env, invoice_id),
+        &soroban_sdk:T::String::from_str(env, invoice_id),
         &sme,
         &target,
         &800i64,
