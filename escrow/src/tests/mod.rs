@@ -63,7 +63,7 @@ mod auth_matrix;
 mod cap_validation;
 // mod collateral_boundary_tests; // file not present in this tree
 mod collateral_config_view;
-// mod collateral_state_view;
+mod collateral_state_view;
 // mod collateral_validation_helpers;
 // mod collateral_limit_setter;   // file not present in this tree
 mod dispute_release;
