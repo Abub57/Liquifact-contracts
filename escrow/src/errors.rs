@@ -114,4 +114,20 @@ pub enum EscrowError {
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
+
+    // ------------------------------------------------------------------------------
+    // Failure Recovery Errors (250..259)
+    // ------------------------------------------------------------------------------
+    /// A recovery attempt was made without a recorded failure context, so the
+    /// escrow cannot deterministically restore prior state.
+    RecoveryContextMissing = 250,
+    /// The supplied recovery snapshot does not match the persisted escrow state,
+    /// indicating a partial or concurrent mutation that must not be applied.
+    RecoveryStateMismatch = 251,
+    /// A recovery operation was requested while the escrow is not in a failed
+    /// state; recovery is only valid after an observable failure.
+    RecoveryNotApplicable = 252,
+    /// The recovery attempt would violate a state-transition invariant and was
+    /// rejected to prevent silent data loss or inconsistent state.
+    RecoveryInvariantViolation = 253,
 }
