@@ -670,7 +670,10 @@ fn test_repeated_rejected_settle_preserves_state() {
             },
         }]);
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| client.settle()));
-        assert!(result.is_err(), "expected each wrong-signer settle to be rejected");
+        assert!(
+            result.is_err(),
+            "expected each wrong-signer settle to be rejected"
+        );
     }
     let after = snapshot_state(&client);
     assert_eq!(
