@@ -1,4 +1,6 @@
-use soroban_sdk::{contracterror, contractimpl, symbol_short, Address, BytesN, Env, Symbol};
+use soroban_sdk::{
+    contracterror, contractimpl, panic_with_error, symbol_short, Address, BytesN, Env, Symbol,
+};
 
 const YIELD_TIER_KEY: Symbol = symbol_short!("YLD_TIER");
 const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
@@ -8,6 +10,8 @@ const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
 #[repr(u32)]
 pub enum Error {
     NotAuthorized = 1,
+    NotInitialized = 2,
+    AlreadyInitialized = 3,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,15 +27,20 @@ pub struct YieldTierContract;
 
 #[contractimpl]
 impl YieldTierContract {
+    /// Initializes the contract once. A repeated call fails with `AlreadyInitialized`.
     pub fn init(env: Env, admin: Address) {
         if env.storage().instance().has(&ADMIN_KEY) {
-            panic!("already initialized");
+            panic_with_error!(&env, Error::AlreadyInitialized);
         }
         env.storage().instance().set(&ADMIN_KEY, &admin);
     }
 
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) -> Result<(), Error> {
-        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN_KEY)
+            .ok_or(Error::NotInitialized)?;
         admin.require_auth();
 
         env.deployer().update_current_contract_wasm(new_wasm_hash);
@@ -51,10 +60,17 @@ impl YieldTierContract {
 
     /// Sets the yield-tier state (admin-only).
     pub fn set_yield_tier(env: Env, tier: YieldTierState) -> Result<(), Error> {
-        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&ADMIN_KEY)
+            .ok_or(Error::NotInitialized)?;
         admin.require_auth();
         env.storage().instance().set(&YIELD_TIER_KEY, &tier);
         env.events().publish((symbol_short!("tier_set"),), (tier.clone(),));
         Ok(())
     }
 }
+
+#[cfg(test)]
+include!("test.rs");
