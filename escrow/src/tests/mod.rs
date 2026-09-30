@@ -80,6 +80,7 @@ pub(crate) fn assert_contract_error<T, E>(
 // mod integration;
 // mod integration_status_guards;
 // mod legal_hold;
+mod auth_matrix;
 mod migration_errors;
 // mod paginated_views;
 // mod pause;
