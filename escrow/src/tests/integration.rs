@@ -45,7 +45,7 @@ impl MockToken {
         panic!("Token contract transfer should not be invoked by escrow metadata-only flows")
     }
 }
- 
+
 #[contract]
 pub struct InitReentryProbe;
 
@@ -79,7 +79,7 @@ impl InitReentryProbe {
             &None,
             &None,
             &None::<i64>,
-        &None::<u32>,
+            &None::<u32>,
         );
     }
 }
@@ -130,7 +130,11 @@ fn assert_escrow_state_unchanged(before: &InvoiceEscrow, after: &InvoiceEscrow) 
 fn assert_no_contract_events(env: &Env, contract_id: &Address) {
     use soroban_sdk::testutils::Events as _;
     assert_eq!(
-        env.events().all().filter_by_contract(contract_id).events().len(),
+        env.events()
+            .all()
+            .filter_by_contract(contract_id)
+            .events()
+            .len(),
         0,
         "rejected init must not emit events"
     );
@@ -170,7 +174,7 @@ fn test_init_rejects_same_parameters_different_admin_and_different_token() {
             &None,
             &None,
             &None::<i64>,
-        &None::<u32>,
+            &None::<u32>,
         ),
         EscrowError::AlreadyInitialized,
     );
@@ -199,7 +203,7 @@ fn test_init_rejects_same_parameters_different_admin_and_different_token() {
             &None,
             &None,
             &None::<i64>,
-        &None::<u32>,
+            &None::<u32>,
         ),
         EscrowError::AlreadyInitialized,
     );
@@ -228,7 +232,7 @@ fn test_init_rejects_same_parameters_different_admin_and_different_token() {
             &None,
             &None,
             &None::<i64>,
-        &None::<u32>,
+            &None::<u32>,
         ),
         EscrowError::AlreadyInitialized,
     );
@@ -383,15 +387,24 @@ fn test_finalize_close_success_after_withdraw() {
     env.mock_all_auths();
 
     let target = 50_000_000i128;
-    let (client, escrow_id, _token, _sme) =
-        setup_withdraw_with_token(&env, target, "CLOSE_OK001");
+    let (client, escrow_id, _token, _sme) = setup_withdraw_with_token(&env, target, "CLOSE_OK001");
 
     assert_eq!(client.get_escrow().status, 3u32);
 
-    let events_before = env.events().all().filter_by_contract(&escrow_id).events().len();
+    let events_before = env
+        .events()
+        .all()
+        .filter_by_contract(&escrow_id)
+        .events()
+        .len();
     client.finalize_close();
 
-    let events_after = env.events().all().filter_by_contract(&escrow_id).events().len();
+    let events_after = env
+        .events()
+        .all()
+        .filter_by_contract(&escrow_id)
+        .events()
+        .len();
     assert_eq!(
         events_after,
         events_before + 1,
@@ -414,14 +427,16 @@ fn test_finalize_close_rejects_active_balance() {
     env.mock_all_auths();
 
     let target = 10_000_000i128;
-    let (client, escrow_id, token, _sme) =
-        setup_withdraw_with_token(&env, target, "CLOSE_BAL001");
+    let (client, escrow_id, token, _sme) = setup_withdraw_with_token(&env, target, "CLOSE_BAL001");
 
     let sac_admin = StellarAssetClient::new(&env, &token.address);
     sac_admin.mint(&escrow_id, &1i128);
 
     let result = client.try_finalize_close();
-    assert!(result.is_err(), "finalization must fail while balance is nonzero");
+    assert!(
+        result.is_err(),
+        "finalization must fail while balance is nonzero"
+    );
     assert_eq!(client.get_escrow().status, 3u32);
 }
 
@@ -439,7 +454,10 @@ fn test_finalize_close_rejects_active_dispute() {
     });
 
     let result = client.try_finalize_close();
-    assert!(result.is_err(), "finalization must fail while dispute is active");
+    assert!(
+        result.is_err(),
+        "finalization must fail while dispute is active"
+    );
     assert_eq!(client.get_escrow().status, 3u32);
 }
 
@@ -1021,7 +1039,7 @@ fn test_unknown_event_schema_version_is_rejected() {
     ));
     assert!(!is_supported_schema_version(
         &env,
-        &((ESCROW_EVENT_SCHEMA_VERSION + 1)).into_val(&env)
+        &(ESCROW_EVENT_SCHEMA_VERSION + 1).into_val(&env)
     ));
 }
 
@@ -1091,7 +1109,11 @@ fn test_noop_call_emits_versioned_event_when_event_is_emitted() {
         .events()
         .len();
     client.set_legal_hold(&true); // no state change
-    let after_events = env.events().all().filter_by_contract(&client.address).events();
+    let after_events = env
+        .events()
+        .all()
+        .filter_by_contract(&client.address)
+        .events();
     if after_events.len() > before {
         assert_all_events_carry_schema_version(&env, &client.address);
     }
@@ -1162,7 +1184,11 @@ fn test_multiple_versioned_events_in_one_transaction() {
         .events()
         .len();
     client.refund_batch(&investors);
-    let after_events = env.events().all().filter_by_contract(&client.address).events();
+    let after_events = env
+        .events()
+        .all()
+        .filter_by_contract(&client.address)
+        .events();
     assert!(
         after_events.len() - before >= 2,
         "expected multiple events in one refund_batch transaction"
@@ -2062,8 +2088,11 @@ fn test_admin_recovery_rejected_before_timelock_elapsed() {
     let proposed_admin = Address::generate(&env);
     init_and_propose_admin_transfer(&env, &client, &admin, &sme, "ADREC_PRE", &proposed_admin);
 
-    let proposal = client.get_admin_transfer_proposal().expect("proposal exists");
-    env.ledger().with_mut(|li| li.timestamp = proposal.proposed_at + 1);
+    let proposal = client
+        .get_admin_transfer_proposal()
+        .expect("proposal exists");
+    env.ledger()
+        .with_mut(|li| li.timestamp = proposal.proposed_at + 1);
 
     let reason = soroban_sdk::String::from_str(&env, "lost key");
     let attempt = client.try_recover_admin_transfer(&reason);
@@ -2083,7 +2112,9 @@ fn test_admin_recovery_succeeds_while_proposal_active() {
     let proposed_admin = Address::generate(&env);
     init_and_propose_admin_transfer(&env, &client, &admin, &sme, "ADREC_ACT", &proposed_admin);
 
-    let proposal = client.get_admin_transfer_proposal().expect("proposal exists");
+    let proposal = client
+        .get_admin_transfer_proposal()
+        .expect("proposal exists");
     let active_time = proposal.proposed_at + (proposal.expires_at - proposal.proposed_at) / 2 + 1;
     env.ledger().with_mut(|li| li.timestamp = active_time);
 
@@ -2108,8 +2139,11 @@ fn test_admin_recovery_succeeds_after_expired_proposal() {
     let proposed_admin = Address::generate(&env);
     init_and_propose_admin_transfer(&env, &client, &admin, &sme, "ADREC_EXP", &proposed_admin);
 
-    let proposal = client.get_admin_transfer_proposal().expect("proposal exists");
-    env.ledger().with_mut(|li| li.timestamp = proposal.expires_at + 1);
+    let proposal = client
+        .get_admin_transfer_proposal()
+        .expect("proposal exists");
+    env.ledger()
+        .with_mut(|li| li.timestamp = proposal.expires_at + 1);
 
     let reason = soroban_sdk::String::from_str(&env, "proposed admin unreachable");
     client.recover_admin_transfer(&reason);
@@ -2130,8 +2164,11 @@ fn test_admin_recovery_repeated_fails() {
     let proposed_admin = Address::generate(&env);
     init_and_propose_admin_transfer(&env, &client, &admin, &sme, "ADREC_RPT", &proposed_admin);
 
-    let proposal = client.get_admin_transfer_proposal().expect("proposal exists");
-    env.ledger().with_mut(|li| li.timestamp = proposal.expires_at + 1);
+    let proposal = client
+        .get_admin_transfer_proposal()
+        .expect("proposal exists");
+    env.ledger()
+        .with_mut(|li| li.timestamp = proposal.expires_at + 1);
 
     let reason = soroban_sdk::String::from_str(&env, "lost key");
     client.recover_admin_transfer(&reason);

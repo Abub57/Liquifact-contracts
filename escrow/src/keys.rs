@@ -22,11 +22,9 @@
 /// `.unwrap_or(default)` and its absence does not change existing entrypoint semantics.
 /// Renaming a variant, changing its XDR discriminant, or altering the stored type of an
 /// existing key is **breaking** and requires a `migrate` path or a full redeploy.
-
 // Key-builder helpers are part of the crate's public API for symmetry. Call sites
 // currently use `DataKey::Variant` literals inline; the helpers are kept so the
 // indirection layer remains available without churn if/when callers migrate.
-
 use crate::DataKey;
 use soroban_sdk::Address;
 
