@@ -1,8 +1,10 @@
-# Collateral Invariants
+# Collateral Validation Boundaries
 
 This document enumerates the invariants that must always hold for the **SME collateral commitment** metadata in the LiquiFact escrow contract.
 
 ---
+
+## Validation Boundaries
 
 ## Overview
 
@@ -30,6 +32,8 @@ The recorded data is stored in the instance storage key `DataKey::SmeCollateralP
 
 ---
 
+## Boundary Cases
+
 ## Enforcement Locations
 
 - **Function** `record_sme_collateral_commitment` – lines 3037‑3060 in `escrow/src/lib.rs`.
@@ -40,6 +44,8 @@ The recorded data is stored in the instance storage key `DataKey::SmeCollateralP
 
 ---
 
+## Duplicate & Invalid Input Handling
+
 ## Related Entry Points
 
 | Entry Point | Purpose | Relevant Invariant Checks |
@@ -49,6 +55,8 @@ The recorded data is stored in the instance storage key `DataKey::SmeCollateralP
 | `get_sme_collateral_commitment` | Retrieve current pledge. | 6 |
 
 ---
+
+## Failure Modes & Observability
 
 ## Security & Design Notes
 
