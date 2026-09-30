@@ -150,16 +150,16 @@ else:
 ### Rust test helper
 
 ```rust
-fn assert_no_commitment(client: &LiquifactEscrowClient<'_>) {
+fn assert_no_commitment(client: &LiquifactEscrowClient<_>) {
     let cfg = client.get_collateral_config();
     assert_eq!(cfg.sme_commitment, CollateralCommitmentSnapshot::None);
 }
 
-fn assert_commitment_amount(client: &LiquifactEscrowClient<'_>, expected: i128) {
+fn assert_commitment_amount(client: &LiquifactEscrowClient<_>, expected: i128) {
     let cfg = client.get_collateral_config();
     match cfg.sme_commitment {
         CollateralCommitmentSnapshot::Some(c) => assert_eq!(c.amount, expected),
-        CollateralCommitmentSnapshot::None => panic!("no commitment"),
+        CollateralCommitmentSnapshot::None => panic("no commitment"),
     }
 }
 ```
