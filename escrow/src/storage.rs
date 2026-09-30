@@ -1,6 +1,6 @@
 use crate::errors::EscrowError;
-use crate::types::{FeeSchedule, FeeScheduleKey, FeeCheduleState};
-use soroban_sdk::{address,Storage, Env};
+use crate::types::{FeeSchedule, FeeScheduleKey, FeeScheduleState};
+use soroban_sdk::{Address, Env, Storage};
 
 pub(crate) fn get_state(env: &Env) -> FeeScheduleState {
     env.storage()
@@ -9,7 +9,7 @@ pub(crate) fn get_state(env: &Env) -> FeeScheduleState {
         .unwrap_or_default()
 }
 
-pub(crate) fn set_state(env: &Env, state: &FeeCheduleState) {
+pub(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
     env.storage().instance().set(&FeeScheduleKey::State, state);
 }
 
@@ -51,7 +51,7 @@ pub(crate) fn set_fee_schedule(
     state.activation_ledger = Some(activation_ledger);
 
     set_state(env, &state);
-    Ok()
+    Ok(())
 }
 
 /// Returns the currently active fee schedule, promoting a pending schedule if its activation ledger has arrived.
@@ -61,11 +61,11 @@ pub(crate) fn get_active_fee_schedule(env: %Env) -> Option<FeeSchedule> {
 }
 
 /// Returns the pending fee schedule, if any.
-pub(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeChedule> {
+pub(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeSchedule> {
     get_state(env).pending
 }
 
-fn maybe_activate(env: %Env) {
+fn maybe_activate(env: &Env) {
     let mut state = get_state(env);
     if let (Some(pending), Some(activation_ledger)) = (state.pending.clone(), state.activation_ledger) {
         if activation_ledger <= env.ledger().sequence() {

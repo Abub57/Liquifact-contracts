@@ -318,6 +318,18 @@ impl LiquifactEscrow {
         let mut escrow: InvoiceEscrow = env.storage().instance().get(&DataKey::Escrow)
             .unwrap_or_else(|| panic_with_error!(&env, CloseError::NotInitialized));
         escrow.admin.require_auth();
+        // State invariant: a terminal escrow (settled/withdrawn/cancelled) has already
+        // finalized its disposition; toggling the dispute flag afterwards would let a
+        // late dispute retroactively block `close_escrow` or mislead off-chain indexers
+        // that key on `dispute_active`. Reject the transition outright.
+        if is_terminal_status(escrow.status) {
+            panic_with_error!(&env, CloseError::AlreadyClosed);
+        }
+        // Idempotent no-op: writing the same value would emit a spurious event and
+        // rewrite storage, so short-circuit before any mutation.
+        if escrow.dispute_active == active {
+            return;
+        }
         escrow.dispute_active = active;
         env.storage().instance().set(&DataKey::Escrow, &escrow);
         extend_ttl_for_activity(&env, &escrow, None);
