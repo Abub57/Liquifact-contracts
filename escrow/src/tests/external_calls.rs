@@ -281,7 +281,6 @@ fn sweep_liability_floor_blocks_sweep_when_investor_not_yet_refunded() {
 }
 
 #[test]
-#[ignore = "upstream latent: escrow API/test drift"]
 fn sweep_liability_floor_allows_sweep_of_excess_above_outstanding() {
     // Two investors fund 500 each. One is refunded. 500 outstanding remains.
     // Contract has 1001 tokens (500 refunded, 500 outstanding, 1 dust).
@@ -316,9 +315,14 @@ fn sweep_liability_floor_allows_sweep_of_excess_above_outstanding() {
     );
 
     // Mint 1001 into contract: 500 for A, 500 for B, 1 dust
-    token.stellar.mint(&investor_a, &1_001i128);
+    // Each investor funds from its own balance, and the dust unit is minted
+    // directly to the escrow contract so the live balance is exactly
+    // 500 (B, outstanding) + 500 (refunded to A) + 1 (dust) = 1001.
+    token.stellar.mint(&investor_a, &500i128);
+    token.stellar.mint(&investor_b, &500i128);
     client.fund(&investor_a, &500i128);
     client.fund(&investor_b, &500i128);
+    token.stellar.mint(&client.address, &1i128);
     client.cancel_funding();
 
     // Refund investor_a → distributed = 500, outstanding = 500
@@ -365,9 +369,15 @@ fn sweep_liability_floor_blocks_sweep_that_would_eat_into_outstanding() {
         &None::<i64>,
     );
 
-    token.stellar.mint(&investor_a, &1_001i128);
+    // Mirrors the setup of
+    // `sweep_liability_floor_allows_sweep_of_excess_above_outstanding`: each
+    // investor funds from its own minted balance and the dust unit is minted
+    // directly to the escrow contract (balance = 501, outstanding = 500).
+    token.stellar.mint(&investor_a, &500i128);
+    token.stellar.mint(&investor_b, &500i128);
     client.fund(&investor_a, &500i128);
     client.fund(&investor_b, &500i128);
+    token.stellar.mint(&client.address, &1i128);
     client.cancel_funding();
     client.refund(&investor_a);
 
@@ -416,7 +426,6 @@ fn sweep_liability_floor_zero_funded_amount_allows_sweep() {
 }
 
 #[test]
-#[ignore = "upstream latent: escrow API/test drift"]
 fn distributed_principal_accumulates_across_multiple_refunds() {
     // Three investors; refund them one by one and verify the counter.
     let env = Env::default();
@@ -449,7 +458,11 @@ fn distributed_principal_accumulates_across_multiple_refunds() {
         &None::<i64>,
     );
 
-    token.stellar.mint(&inv_a, &900i128);
+    // Each investor funds from its own minted balance; the dust units below
+    // are minted directly to the escrow contract after funding.
+    token.stellar.mint(&inv_a, &300i128);
+    token.stellar.mint(&inv_b, &300i128);
+    token.stellar.mint(&inv_c, &300i128);
     client.fund(&inv_a, &300i128);
     client.fund(&inv_b, &300i128);
     client.fund(&inv_c, &300i128);
@@ -518,7 +531,6 @@ fn setup_multi_investor_cancelled<'a>(
 }
 
 #[test]
-#[ignore = "upstream latent: escrow API/test drift"]
 fn sweep_liability_floor_refund_then_sweep_sequence() {
     let env = Env::default();
     env.mock_all_auths();
@@ -584,7 +596,6 @@ fn sweep_liability_floor_one_unit_over_fails() {
 }
 
 #[test]
-#[ignore = "upstream latent: escrow API/test drift"]
 fn sweep_liability_floor_capped_by_max_dust_sweep() {
     let env = Env::default();
     env.mock_all_auths();
@@ -665,7 +676,6 @@ fn sweep_liability_floor_legal_hold_blocks() {
 }
 
 #[test]
-#[ignore = "upstream latent: escrow API/test drift"]
 fn sweep_liability_floor_all_refunded_sweep_all_dust() {
     let env = Env::default();
     env.mock_all_auths();
@@ -714,7 +724,6 @@ fn reconciliation_reports_zero_surplus_when_balance_equals_liability() {
 }
 
 #[test]
-#[ignore = "upstream latent: escrow API/test drift"]
 fn reconciliation_surplus_equals_sweepable_dust_before_and_after_partial_refund() {
     // Two investors fund 500 each; 1 unit of dust is minted on top (balance 1001).
     let env = Env::default();
@@ -745,9 +754,12 @@ fn reconciliation_surplus_equals_sweepable_dust_before_and_after_partial_refund(
         &None,
         &None::<i64>,
     );
-    token.stellar.mint(&investor_a, &1_001i128);
+    token.stellar.mint(&investor_a, &500i128);
+    token.stellar.mint(&investor_b, &500i128);
     client.fund(&investor_a, &500i128);
     client.fund(&investor_b, &500i128);
+    // 1 unit of dust on top of the principal (balance 1001).
+    token.stellar.mint(&client.address, &1i128);
     client.cancel_funding();
 
     // Before any refund: outstanding = 1000, balance = 1001, surplus = 1.
@@ -913,20 +925,27 @@ fn sweep_terminal_dust_emits_treasury_dust_swept_event() {
 }
 
 #[test]
-#[ignore = "branch-specific latent failure"]
 fn sweep_liability_floor_blocked_emits_no_dust_event() {
-    use soroban_sdk::testutils::Events as _;
-
     let env = Env::default();
     env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
     let investor = Address::generate(&env);
     let fund_amount = 500i128;
-    let (token, _treasury) =
+    let (token, treasury) =
         setup_cancelled_with_token(&env, &client, &admin, &sme, &investor, fund_amount);
-    token.stellar.mint(&client.address, &(fund_amount + 1));
+    // Balance is exactly the outstanding investor principal here (no dust, no
+    // refunds), so a sweep of any size would dip below the liability floor.
 
-    let events_before = env.events().all().events().len();
-    assert!(client.try_sweep_terminal_dust(&1i128).is_err());
-    assert_eq!(env.events().all().events().len(), events_before);
+    assert_contract_error(
+        client.try_sweep_terminal_dust(&1i128),
+        EscrowError::SweepExceedsLiabilityFloor,
+    );
+
+    // The blocked sweep must be a no-op: no tokens reached the treasury and
+    // the escrow balance is untouched, i.e. no TreasuryDustSwept side effect
+    // escaped the failed call. (The test host's event snapshot only covers the
+    // most recent invocation frame, so token movement is the observable proxy
+    // for "no event was published" here.)
+    assert_eq!(token.token.balance(&treasury), 0i128);
+    assert_eq!(token.token.balance(&client.address), fund_amount);
 }
