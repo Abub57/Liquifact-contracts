@@ -1,4 +1,4 @@
-#![allow(
+#allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -15,20 +15,20 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-)]
+]
 use super::{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
-    SCHEMA_VERSION,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+SCHEMA_VERSION,
+    STORAGE_SCHEMA_VERSION,
 };
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils:{Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -46,10 +46,10 @@ pub(crate) fn assert_contract_error<T, E>(
     let expected_code = expected as u32;
     match result {
         Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
         Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -90,6 +90,7 @@ mod yield_tier_boundaries;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
+mod storage_recovery;
 
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
@@ -161,8 +162,8 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None, // No funding deadline
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 }
 
@@ -202,8 +203,8 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 
     let investor = Address::generate(env);
