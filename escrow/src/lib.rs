@@ -674,6 +674,13 @@ pub enum EscrowError {
     CollateralTimestampBackwards = 62,
     /// [`LiquifactEscrow::clear_sme_collateral_commitment`] called when no pledge exists.
     NoCollateralToClear = 63,
+    /// [`LiquifactEscrow::set_collateral_limit`] received a non-positive limit (`limit <= 0`).
+    CollateralLimitNotPositive = 64,
+    /// [`LiquifactEscrow::set_collateral_limit`] received a limit exceeding [`MAX_INVOICE_AMOUNT`].
+    CollateralLimitExceedsMax = 65,
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`] received an amount exceeding the
+    /// configured collateral limit.
+    CollateralLimitExceeded = 66,
 
     /// [`LiquifactEscrow::set_investors_allowlisted`] received an empty batch.
     InvestorBatchEmpty = 70,
@@ -1273,6 +1280,11 @@ pub enum DataKey {
     /// Optional SME collateral commitment metadata (record-only ΓÇö not an on-chain asset lock).
     /// Absent when no commitment has been recorded. Replaceable by the SME.
     SmeCollateralPledge,
+    /// Optional admin-configured ceiling on the maximum collateral amount an SME may commit.
+    /// Absent ΓçÆ defaults to [`MAX_INVOICE_AMOUNT`] (no custom ceiling).
+    /// Set via [`LiquifactEscrow::set_collateral_limit`]; enforced by
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`].
+    CollateralLimit,
     /// Set to `true` when an investor has exercised a claim after settlement.
     /// **Persistent** storage. Absent ΓçÆ `false`. Written once; a second claim returns without re-emitting.
     InvestorClaimed(Address),
@@ -1658,6 +1670,33 @@ pub enum EscrowCloseSnapshot {
 pub enum CollateralCommitmentSnapshot {
     None,
     Some(SmeCollateralCommitment),
+}
+
+/// Bundled read-only snapshot of the collateral subsystem configuration.
+///
+/// Returned by [`LiquifactEscrow::get_collateral_config`]. Both fields are read
+/// atomically in a single ledger snapshot, so callers never see a mix of values
+/// from different ledger revisions. Use this view in preference to the individual
+/// getters when you need both values together.
+///
+/// # Defaults (before `init` or without explicit overrides)
+///
+/// | Field | Default |
+/// |-------|---------|
+/// | `collateral_limit` | [`MAX_INVOICE_AMOUNT`] |
+/// | `sme_commitment` | [`CollateralCommitmentSnapshot::None`] |
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct CollateralConfig {
+    /// Maximum amount an SME may commit as collateral.
+    /// Defaults to [`MAX_INVOICE_AMOUNT`] before any admin override via
+    /// [`LiquifactEscrow::set_collateral_limit`].
+    pub collateral_limit: i128,
+    /// Current SME collateral commitment, if any.
+    /// [`CollateralCommitmentSnapshot::None`] before the first
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`] call, or after
+    /// [`LiquifactEscrow::clear_sme_collateral_commitment`].
+    pub sme_commitment: CollateralCommitmentSnapshot,
 }
 
 /// Lifecycle state for a recorded dispute.
@@ -4472,6 +4511,84 @@ impl LiquifactEscrow {
         env.storage().instance().get(&DataKey::SmeCollateralPledge)
     }
 
+    /// Return the current collateral ceiling, or [`MAX_INVOICE_AMOUNT`] when no custom limit
+    /// has been configured via [`LiquifactEscrow::set_collateral_limit`].
+    ///
+    /// **Authorization:** None — ungated read.
+    /// **State required:** None — safe to call before [`LiquifactEscrow::init`].
+    /// **Idempotent:** Yes.
+    pub fn get_collateral_limit(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::CollateralLimit)
+            .unwrap_or(MAX_INVOICE_AMOUNT)
+    }
+
+    /// Set the admin-configured ceiling on SME collateral commitment amounts.
+    ///
+    /// Any subsequent call to [`LiquifactEscrow::record_sme_collateral_commitment`] with
+    /// an `amount > limit` is rejected with [`EscrowError::CollateralLimitExceeded`].
+    ///
+    /// # Authorization
+    /// Requires [`InvoiceEscrow::admin`] auth.
+    ///
+    /// # Validation
+    /// - `limit` must be `> 0` — [`EscrowError::CollateralLimitNotPositive`].
+    /// - `limit` must be `<= MAX_INVOICE_AMOUNT` — [`EscrowError::CollateralLimitExceedsMax`].
+    ///
+    /// # Errors
+    /// - [`EscrowError::CollateralLimitNotPositive`] if `limit <= 0`.
+    /// - [`EscrowError::CollateralLimitExceedsMax`] if `limit > MAX_INVOICE_AMOUNT`.
+    pub fn set_collateral_limit(env: Env, limit: i128) {
+        let escrow = Self::get_escrow(env.clone());
+        escrow.admin.require_auth();
+
+        ensure(&env, limit > 0, EscrowError::CollateralLimitNotPositive);
+        ensure(
+            &env,
+            limit <= MAX_INVOICE_AMOUNT,
+            EscrowError::CollateralLimitExceedsMax,
+        );
+
+        env.storage()
+            .instance()
+            .set(&DataKey::CollateralLimit, &limit);
+    }
+
+    /// Return a bundled, atomically-consistent snapshot of the collateral subsystem
+    /// configuration ([`CollateralConfig`]).
+    ///
+    /// Both `collateral_limit` and `sme_commitment` are read from the **same** ledger
+    /// snapshot, so callers never observe a mix of values from different revisions.
+    ///
+    /// # Defaults (before `init` or without explicit overrides)
+    ///
+    /// | Field | Default |
+    /// |-------|---------|
+    /// | `collateral_limit` | [`MAX_INVOICE_AMOUNT`] |
+    /// | `sme_commitment` | [`CollateralCommitmentSnapshot::None`] |
+    ///
+    /// **Authorization:** None — ungated read, works before [`LiquifactEscrow::init`].
+    /// **Idempotent:** Yes.
+    pub fn get_collateral_config(env: Env) -> CollateralConfig {
+        let collateral_limit: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralLimit)
+            .unwrap_or(MAX_INVOICE_AMOUNT);
+
+        let sme_commitment: CollateralCommitmentSnapshot =
+            match env.storage().instance().get(&DataKey::SmeCollateralPledge) {
+                Some(c) => CollateralCommitmentSnapshot::Some(c),
+                None => CollateralCommitmentSnapshot::None,
+            };
+
+        CollateralConfig {
+            collateral_limit,
+            sme_commitment,
+        }
+    }
+
     /// Retire the recorded SME collateral pledge.
     ///
     /// Metadata-only: no tokens are moved. Requires SME auth.
@@ -5046,6 +5163,7 @@ impl LiquifactEscrow {
     /// - [`EscrowError::CollateralAmountNotPositive`] if `amount <= 0`.
     /// - [`EscrowError::CollateralAssetEmpty`] if `asset` is empty.
     /// - [`EscrowError::CollateralTimestampBackwards`] if the replacement timestamp is in the past.
+    /// - [`EscrowError::CollateralLimitExceeded`] if `amount` exceeds the configured collateral limit.
     /// - Standard uninitialized check via `load_escrow_require_sme`.
     pub fn record_sme_collateral_commitment(
         env: Env,
@@ -5057,6 +5175,18 @@ impl LiquifactEscrow {
             &env,
             asset != Symbol::new(&env, ""),
             EscrowError::CollateralAssetEmpty,
+        );
+
+        // Enforce the admin-configured collateral ceiling (defaults to MAX_INVOICE_AMOUNT).
+        let limit: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::CollateralLimit)
+            .unwrap_or(MAX_INVOICE_AMOUNT);
+        ensure(
+            &env,
+            amount <= limit,
+            EscrowError::CollateralLimitExceeded,
         );
 
         // env.clone(): env is used again after this call for storage read/write, timestamp, and publish.
