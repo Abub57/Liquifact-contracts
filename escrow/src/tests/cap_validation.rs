@@ -60,7 +60,6 @@ fn test_unique_funder_count_basic_functionality() {
 }
 
 #[test]
-#[should_panic]
 fn test_cap_enforcement_blocks_excess_investors() {
     let env = Env::default();
     env.mock_all_auths();
@@ -100,9 +99,24 @@ fn test_cap_enforcement_blocks_excess_investors() {
     assert_eq!(client.get_unique_funder_count(), 2);
     assert_eq!(client.get_escrow().status, 0); // still open
 
-    // Third investor hits the cap — must panic "unique investor cap reached".
+    // A rejected new investor must not mutate any funding state.
     let inv3 = Address::generate(&env);
-    client.fund(&inv3, &1_000_000_000i128);
+    assert_contract_error(
+        client.try_fund(&inv3, &1_000_000_000i128),
+        crate::EscrowError::UniqueInvestorCapReached,
+    );
+    assert_eq!(client.get_unique_funder_count(), 2);
+    assert_eq!(client.get_contribution(&inv3), 0);
+    assert_eq!(client.get_contribution(&inv1), 50_000_000_000i128);
+    assert_eq!(client.get_contribution(&inv2), 50_000_000_000i128);
+    assert_eq!(client.get_escrow().funded_amount, 100_000_000_000i128);
+    assert_eq!(client.get_escrow().status, 0);
+
+    // Existing investors may still add principal without consuming another slot.
+    client.fund(&inv1, &1_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 2);
+    assert_eq!(client.get_contribution(&inv1), 51_000_000_000i128);
+    assert_eq!(client.get_escrow().funded_amount, 101_000_000_000i128);
 }
 
 #[test]
@@ -197,7 +211,6 @@ fn test_no_cap_allows_unlimited_investors() {
 }
 
 #[test]
-#[should_panic]
 fn test_max_per_investor_cap_blocks_excess_principal() {
     let env = Env::default();
     env.mock_all_auths();
@@ -231,8 +244,21 @@ fn test_max_per_investor_cap_blocks_excess_principal() {
     client.fund(&inv1, &30_000_000_000i128);
     assert_eq!(client.get_contribution(&inv1), 30_000_000_000i128);
 
-    // Second contribution would exceed the per-investor cap.
-    client.fund(&inv1, &21_000_000_000i128);
+    // A rejected follow-on contribution must preserve principal and aggregate state.
+    assert_contract_error(
+        client.try_fund(&inv1, &21_000_000_000i128),
+        crate::EscrowError::InvestorContributionExceedsCap,
+    );
+    assert_eq!(client.get_contribution(&inv1), 30_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 1);
+    assert_eq!(client.get_escrow().funded_amount, 30_000_000_000i128);
+    assert_eq!(client.get_escrow().status, 0);
+
+    // A valid follow-on amount remains possible after the rejected operation.
+    client.fund(&inv1, &20_000_000_000i128);
+    assert_eq!(client.get_contribution(&inv1), 50_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 1);
+    assert_eq!(client.get_escrow().funded_amount, 50_000_000_000i128);
 }
 
 #[test]
