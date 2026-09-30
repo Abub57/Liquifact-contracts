@@ -70,6 +70,7 @@ fn deploy(env: &Env, target: i128) -> (LiquifactEscrowClient<'_>, Address) {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
     (client, id)
 }
