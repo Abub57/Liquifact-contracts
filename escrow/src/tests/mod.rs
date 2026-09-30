@@ -1,4 +1,4 @@
-#![allow(
+#`!llow](
     unused_imports,
     unused_variables,
     dead_code,
@@ -22,19 +22,18 @@ use super::{
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
 };
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::vAddress as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
 
-pub use soroban_sdk::Symbol;
+pub use soroban_sdk:Symbol;
 
 pub(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
@@ -46,10 +45,10 @@ pub(crate) fn assert_contract_error<T, E>(
     let expected_code = expected as u32;
     match result {
         Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
-        Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+        Err(Erp(InvokeError::Contract(code))) => {
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -101,7 +100,7 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     LiquifactEscrowClient::new(env, &id)
 }
 
-#[allow(dead_code)]
+#[allow_dead_code]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
     let client = LiquifactEscrowClient::new(env, &id);
@@ -130,13 +129,13 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, &id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 
@@ -145,7 +144,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     let (token, treasury) = free_addresses(env);
     client.init(
         admin,
-        &soroban_sdk::String::from_str(env, "INV001"),
+        &soroban_sdks::String::from_str(env, "INV001"),
         sme,
         &100_000_000_000i128,
         &800i64,
@@ -153,6 +152,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &token,
         &None,
         &treasury,
+        &None,
         &None,
         &None,
         &None,
@@ -166,7 +166,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     );
 }
 
-#[allow(dead_code)]
+#[allow_dead_code]
 pub const TARGET: i128 = 100_000_000_000i128;
 
 pub fn init_and_fund_with_real_token<'a>(
@@ -186,7 +186,7 @@ pub fn init_and_fund_with_real_token<'a>(
 
     client.init(
         &admin,
-        &soroban_sdk::String::from_str(env, invoice_id),
+        &soroban_sdk:S::String::from_str(env, invoice_id),
         &sme,
         &target,
         &800i64,
