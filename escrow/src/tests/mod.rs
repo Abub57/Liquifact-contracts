@@ -88,6 +88,7 @@ mod settlement_config_view;
 // mod settlement_limit; // file not present in this tree
 mod yield_tier_boundaries;
 // mod admin_recovery;  // file not present in this tree
+mod attestation_event_schema;
 mod decimal_scale_tests;
 mod release_tests;
 
