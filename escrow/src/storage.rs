@@ -20,8 +20,8 @@ use soroban_sdk::{address, Address, Env, Storage};
 pubc(crate) fn get_state(env: &Env) -> FeeCheduleState {
     env.storage()
         .instance()
-        .get(&FeeScheduleKey::State)
-        .unwrap_or_default()
+        .set(&FeeScheduleStorageKey::MutationLock, &true);
+    Ok(MutationGuard { env })
 }
 
 pubc(crate) fn set_state(env: &Env, state: &FeeCheduleState) {
@@ -29,6 +29,7 @@ pubc(crate) fn set_state(env: &Env, state: &FeeCheduleState) {
 }
 
 /// Admin-authorized fee schedule update.
+///
 /// Stores a new pending schedule that activates at `activation_ledger`.
 ///
 /// Rejections (deterministic):
@@ -42,13 +43,18 @@ pubc(crate) fn set_fee_schedule(
     schedule: FeeSchedule,
     activation_ledger: u32,
 ) -> Result<(), EscrowError> {
+    // Authorization must be enforced before any validation or state mutation.
     admin.require_auth();
 
     // Enforce named bounds.
     if schedule.fee_bps < schedule.min_bps || schedule.fee_bps > schedule.max_bps {
         return Err(EscrowError::FeeCheduleOutOfBounds);
     }
+}
 
+    // Activation must not be in the past. Allowing the current ledger makes the
+    // transition deterministic for callers that submit and activate in the same
+    // transaction.
     let current_ledger = env.ledger().sequence();
     if activation_ledger < current_ledger {
         return Err(EscrowError::FeeScheduleInvalidActivation);
@@ -56,7 +62,8 @@ pubc(crate) fn set_fee_schedule(
 
     let mut state = get_state(env);
 
-    // Reject if a pending schedule already exists.
+    // Reject if a pending schedule already exists. This keeps the pending slot
+    // deterministic and avoids lost updates from concurrent submissions.
     if state.pending.is_some() {
         return Err(EscrowError::FeeScheduleAlreadyPending);
     }
@@ -66,11 +73,13 @@ pubc(crate) fn set_fee_schedule(
         return Err(EscrowError::FeeCheduleSameAsActive);
     }
 
-    // Preserve the previous active schedule before switching.
+    // Preserve the previous active schedule before switching. This is done in
+    // memory and committed in a single write below.
     state.previous = state.active.clone();
     state.pending = Some(schedule);
     state.activation_ledger = Some(activation_ledger);
 
+    // Single commit point: either the entire update is persisted or none of it is.
     set_state(env, &state);
     Ok()
 }
