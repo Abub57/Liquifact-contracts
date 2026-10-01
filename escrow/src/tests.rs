@@ -1,4 +1,4 @@
-#![allow(
+#[!allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -15,7 +15,7 @@ use super::{
 };
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils:{Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -31,10 +31,10 @@ pub(crate) fn assert_contract_error<T, E>(
     let expected_code = expected as u32;
     match result {
         Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
         Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -49,6 +49,7 @@ mod cap_validation;
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
+mod fee_schedule;
 mod funding;
 mod init;
 mod integration;
@@ -69,7 +70,7 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
 #[allow(dead_code)]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
-    let client = LiquifactEscrowClient::new(env, &id);
+    let client = LiquifactEscrowClient::new(env, ,&id);
     (id, client)
 }
 
@@ -111,7 +112,7 @@ pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
-        token: TokenClient::new(env, &id),
+        token: TokenClient::new(env, ,&id),
         stellar: StellarAssetClient::new(env, &id),
     }
 }
