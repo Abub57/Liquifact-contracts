@@ -6,6 +6,9 @@
 //! - Result is consistent with [`LiquifactEscrow::get_version`] (both read the same key).
 //! - No auth required (pure read).
 //! - Idempotency: calling multiple times returns the same value.
+//! - Compatibility contract: the value is stable across state mutations and
+//!   remains readable (never panics) even when the contract is uninitialised
+//!   or has been re-initialised, so downstream consumers can rely on it.
 
 use super::super::{LiquifactEscrow, LiquifactEscrowClient, SCHEMA_VERSION};
 use soroban_sdk::{testutils::Address as _, Address, Env};
@@ -223,4 +226,89 @@ fn test_get_collateral_version_unchanged_after_set_collateral_limit() {
     let after = client.get_collateral_version();
 
     assert_eq!(before, after, "set_collateral_limit must not change the schema version");
+}
+
+// ── Compatibility contract ────────────────────────────────────────────────────
+
+/// The read must never panic on an uninitialised contract. Downstream callers
+/// rely on this to probe the schema version before deciding whether to call
+/// `init`, so a panic here would be a breaking change.
+#[test]
+fn test_get_collateral_version_does_not_panic_before_init() {
+    let env = Env::default();
+    let client = deploy(&env);
+
+    // Must return a value (not panic) even though storage is empty.
+    let value = client.get_collateral_version();
+    assert_eq!(value, 0, "uninitialised contract must report version 0");
+}
+
+/// The read must remain callable and stable after a state mutation that
+/// touches unrelated storage, ensuring the version key is not clobbered by
+/// collateral bookkeeping.
+#[test]
+fn test_get_collateral_version_stable_across_multiple_mutations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    let baseline = client.get_collateral_version();
+    assert_eq!(baseline, SCHEMA_VERSION);
+
+    client.set_collateral_limit(&1_000_000i128);
+    assert_eq!(client.get_collateral_version(), baseline);
+
+    client.record_sme_collateral_commitment(
+        &soroban_sdk::Symbol::new(&env, "GOLD"),
+        &500_000i128,
+    );
+    assert_eq!(client.get_collateral_version(), baseline);
+
+    client.clear_sme_collateral_commitment();
+    assert_eq!(client.get_collateral_version(), baseline);
+}
+
+/// Re-initialising the contract must not silently change the reported schema
+/// version in a way that would break compatibility for existing readers.
+/// Either the call is rejected (state preserved) or it succeeds with the same
+/// version — both outcomes keep the reader contract intact.
+#[test]
+fn test_get_collateral_version_after_reinit_attempt() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = deploy_and_init(&env);
+
+    let before = client.get_collateral_version();
+    assert_eq!(before, SCHEMA_VERSION);
+
+    let token = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let result = client.try_init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "COLLVER2"),
+        &sme,
+        &10_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    // Whether re-init is rejected or accepted, the version reader must remain
+    // consistent with `get_version` and must not regress to 0.
+    let after = client.get_collateral_version();
+    assert_eq!(after, client.get_version());
+    assert_eq!(after, SCHEMA_VERSION);
+    let _ = result;
 }

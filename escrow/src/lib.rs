@@ -157,6 +157,7 @@ use soroban_sdk::{
 
 pub mod external_calls;
 mod keys;
+mod storage;
 
 /// Current storage schema version written to [`DataKey::Version`] by [`LiquifactEscrow::init`].
 ///
@@ -190,6 +191,10 @@ pub const EVENT_SCHEMA_VERSION: u32 = 1;
 /// Upper bound on [`LiquifactEscrow::append_attestation_digest`] entries to keep storage bounded.
 /// Revocation via [`LiquifactEscrow::revoke_attestation_digest`] does not consume a slot.
 pub const MAX_ATTESTATION_APPEND_ENTRIES: u32 = 32;
+
+/// Maximum number of addresses that may appear in a single allowlist event payload.
+/// Mirrors [`MAX_INVESTOR_ALLOWLIST_BATCH`] so event consumers can bound their decode buffers.
+pub const MAX_ALLOWLIST_EVENT_ADDRESSES: u32 = MAX_INVESTOR_ALLOWLIST_BATCH;
 
 /// Maximum number of indices that can be revoked in a single batch call.
 pub const MAX_ATTESTATION_REVOKE_BATCH: u32 = 32;
@@ -234,6 +239,15 @@ pub enum FeeScheduleStorageKey {
     Active,
     Pending,
     Previous,
+    /// Exclusive mutation lock held while a fee-schedule transition is in
+    /// flight. Absent / `false` ⇒ no mutation in progress. Used to reject
+    /// re-entrant or overlapping writes with
+    /// [`FeeScheduleError::ConcurrentMutation`].
+    ///
+    /// **Additive key (ADR-007):** absent on instances predating this guard,
+    /// which read as unlocked and behave identically. See the [`storage`]
+    /// module for the invariant list and failure-mode analysis.
+    MutationLock,
 }
 
 #[contracterror]
@@ -243,6 +257,9 @@ pub enum FeeScheduleError {
     InvalidActivationLedger = 2,
     PendingScheduleExists = 3,
     NotInitialized = 4,
+    /// A fee-schedule mutation was attempted while another was in flight
+    /// (re-entrant or overlapping execution). No state was modified.
+    ConcurrentMutation = 5,
 }
 
 // ---------------------------------------------------------------------------
@@ -307,9 +324,6 @@ pub const MAX_SETTLE_BATCH: u32 = 50;
 
 /// Upper bound on [`LiquifactEscrow::refund_batch`] entries to keep storage/CPU bounded.
 pub const MAX_REFUND_BATCH: u32 = 50;
-
-/// Upper bound on [`LiquifactEscrow::set_investors_allowlisted`] batch size.
-pub const MAX_INVESTOR_ALLOWLIST_BATCH: u32 = 32;
 
 /// Upper bound on [`LiquifactEscrow::get_contributions`] / investor read batch size.
 pub const MAX_INVESTOR_READ_BATCH: u32 = 50;
@@ -1047,6 +1061,14 @@ pub enum DataKey {
     /// Optional SME collateral commitment metadata (record-only — not an on-chain asset lock).
     /// Absent when no commitment has been recorded. Replaceable by the SME.
     SmeCollateralPledge,
+    /// Admin-configured maximum allowed collateral commitment amount.
+    ///
+    /// When present, every call to [`LiquifactEscrow::record_sme_collateral_commitment`] and
+    /// [`LiquifactEscrow::batch_record_collateral`] must satisfy `amount <= limit`. Absent ΓçÆ
+    /// no limit is enforced (amounts are still bounded by [`MAX_INVOICE_AMOUNT`]).
+    /// Written by [`LiquifactEscrow::set_collateral_limit`]; read by the validation helpers
+    /// and [`LiquifactEscrow::get_collateral_limit`] / [`LiquifactEscrow::get_collateral_config`].
+    CollateralLimit,
     /// Set to `true` when an investor has exercised a claim after settlement.
     /// **Persistent** storage. Absent ⇒ `false`. Written once; a second claim returns without re-emitting.
     InvestorClaimed(Address),
@@ -2284,117 +2306,59 @@ impl LiquifactEscrow {
     /// Admin-authorized submission of a new pending fee schedule.
     ///
     /// The schedule must be in-bounds and its activation ledger must lie strictly
-    /// in the future. Duplicate pending schedules are idempotent.
+    /// in the future. Re-submitting the exact pending schedule is an idempotent
+    /// no-op; a *different* pending schedule is rejected with
+    /// [`FeeScheduleError::PendingScheduleExists`].
+    ///
+    /// All storage work is delegated to [`storage`], which serialises the whole
+    /// fee-schedule lifecycle under an exclusive mutation lock and commits the
+    /// transition atomically. See that module for the invariant list and
+    /// failure-mode analysis.
     pub fn submit_fee_schedule(env: Env, schedule: FeeSchedule) {
         let escrow: InvoiceEscrow = env
             .storage()
             .instance()
             .get(&DataKey::Escrow)
             .unwrap_or_else(|| panic_with_error!(&env, FeeScheduleError::NotInitialized));
-        escrow.admin.require_auth();
-
-        if schedule.min_fee_bps > schedule.fee_bps
-            || schedule.fee_bps > schedule.max_fee_bps
-            || schedule.max_fee_bps > 10_000
-        {
-            panic_with_error!(&env, FeeScheduleError::FeeOutOfBounds);
+        let admin = escrow.admin;
+        if let Err(err) = storage::submit_fee_schedule(&env, &admin, &schedule) {
+            panic_with_error!(&env, err);
         }
-
-        let current_ledger = env.ledger().sequence();
-        if schedule.activation_ledger <= current_ledger {
-            panic_with_error!(&env, FeeScheduleError::InvalidActivationLedger);
-        }
-
-        Self::activate_fee_schedule(env.clone());
-
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        if pending.as_ref() == Some(&schedule) {
-            return;
-        }
-        if pending.is_some() {
-            panic_with_error!(&env, FeeScheduleError::PendingScheduleExists);
-        }
-
-        env.storage()
-            .instance()
-            .set(&FeeScheduleStorageKey::Pending, &schedule);
     }
 
     /// Promotes a pending schedule to active when its activation ledger is reached.
     ///
     /// This is intentionally callable by anyone; it only applies a previously
     /// admin-authorized schedule and records the previous active schedule.
+    /// Idempotent: returns `true` only on the invocation that performs the
+    /// promotion.
     pub fn activate_fee_schedule(env: Env) -> bool {
-        let current_ledger = env.ledger().sequence();
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        if let Some(p) = pending {
-            if p.activation_ledger <= current_ledger {
-                let previous: Option<FeeSchedule> =
-                    env.storage().instance().get(&FeeScheduleStorageKey::Active);
-                env.storage()
-                    .instance()
-                    .set(&FeeScheduleStorageKey::Active, &p);
-                env.storage()
-                    .instance()
-                    .set(&FeeScheduleStorageKey::Previous, &previous);
-                env.storage()
-                    .instance()
-                    .remove(&FeeScheduleStorageKey::Pending);
-                return true;
-            }
+        match storage::activate_if_due(&env) {
+            Ok(promoted) => promoted,
+            Err(err) => panic_with_error!(&env, err),
         }
-        false
     }
 
     /// Returns the active fee schedule for the current ledger, computing any
     /// not-yet-promoted boundary activation on the fly.
+    ///
+    /// **Pure:** this view never mutates storage.
     pub fn get_active_fee_schedule(env: Env) -> Option<FeeSchedule> {
-        let active: Option<FeeSchedule> =
-            env.storage().instance().get(&FeeScheduleStorageKey::Active);
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        match pending {
-            Some(p) if p.activation_ledger <= env.ledger().sequence() => Some(p),
-            _ => active,
-        }
+        storage::active(&env)
     }
 
     /// Returns the pending fee schedule that will activate at a future ledger.
+    ///
+    /// **Pure:** this view never mutates storage.
     pub fn get_pending_fee_schedule(env: Env) -> Option<FeeSchedule> {
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        match pending {
-            Some(p) if p.activation_ledger > env.ledger().sequence() => Some(p),
-            _ => None,
-        }
+        storage::pending(&env)
     }
 
     /// Returns the previously active fee schedule after a boundary activation.
+    ///
+    /// **Pure:** this view never mutates storage.
     pub fn get_previous_fee_schedule(env: Env) -> Option<FeeSchedule> {
-        let active: Option<FeeSchedule> =
-            env.storage().instance().get(&FeeScheduleStorageKey::Active);
-        let pending: Option<FeeSchedule> = env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending);
-        if let Some(p) = pending {
-            if p.activation_ledger <= env.ledger().sequence() {
-                return active;
-            }
-        }
-        env.storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Previous)
+        storage::previous(&env)
     }
     fn legal_hold_active(env: &Env) -> bool {
         env.storage()
@@ -3961,9 +3925,11 @@ impl LiquifactEscrow {
 
         let log = Self::load_attestation_log(&env);
 
+        // Validate the full batch before the first storage mutation. This keeps the
+        // operation deterministic: any later out-of-range or duplicate/revoked index
+        // aborts the whole call and leaves the persisted append log unchanged.
         for i in 0..n {
             let index = indices.get(i).unwrap();
-
             Self::require_attestation_index_in_range(&env, &log, index);
             ensure(
                 &env,
@@ -3972,7 +3938,10 @@ impl LiquifactEscrow {
                     .has(&DataKey::AttestationRevoked(index)),
                 EscrowError::AttestationAlreadyRevoked,
             );
+        }
 
+        for i in 0..n {
+            let index = indices.get(i).unwrap();
             env.storage()
                 .instance()
                 .set(&DataKey::AttestationRevoked(index), &true);
@@ -5687,8 +5656,6 @@ impl LiquifactEscrow {
             EscrowError::PausedBlocksFunding,
         );
 
-        investor.require_auth();
-
         ensure(&env, amount > 0, EscrowError::FundingAmountNotPositive);
 
         let floor: i128 = env
@@ -5748,9 +5715,9 @@ impl LiquifactEscrow {
             );
         }
 
-        // Hoist UniqueFunderCount read: used for both the cap assertion (below) and the
-        // increment write (after contribution is recorded). A single read covers both uses,
-        // eliminating one storage read on every new-investor funding call.
+        // The active-funder counter may decrease after unfunding, but the investor
+        // index is historical and bounded. Re-funding an indexed address must not
+        // append it again or let the index grow past the hard lifetime ceiling.
         let cur_funder_count: u32 = if prev == 0 {
             env.storage()
                 .instance()
@@ -5759,6 +5726,8 @@ impl LiquifactEscrow {
         } else {
             0 // prev != 0: count is not needed; skip the read entirely.
         };
+        let mut investor_index = None;
+        let mut investor_is_indexed = false;
 
         if prev == 0 {
             if let Some(cap) = env
@@ -5772,6 +5741,30 @@ impl LiquifactEscrow {
                     EscrowError::UniqueInvestorCapReached,
                 );
             }
+
+            let mut index: Vec<Address> = env
+                .storage()
+                .instance()
+                .get(&keys::investor_index())
+                .unwrap_or_else(|| Vec::new(&env));
+            for i in 0..index.len() {
+                if index.get(i).unwrap() == investor {
+                    investor_is_indexed = true;
+                    break;
+                }
+            }
+
+            if !investor_is_indexed {
+                ensure(
+                    &env,
+                    index.len() < MAX_UNIQUE_INVESTORS,
+                    EscrowError::UniqueInvestorHardCapReached,
+                );
+            }
+            if !investor_is_indexed {
+                index.push_back(investor.clone());
+            }
+            investor_index = Some(index);
         }
 
         // Capture the effective yield and tier lock threshold in locals so event fields can
@@ -5828,7 +5821,10 @@ impl LiquifactEscrow {
                 );
             }
             Self::set_persistent_investor_claim_not_before(&env, investor.clone(), claim_nb);
-            res
+            YieldResolution {
+                effective_yield_bps: investor_effective_yield_bps,
+                matched_lock_secs: tier_lock_secs,
+            }
         };
         let investor_effective_yield_bps = resolution.effective_yield_bps;
         let tier_lock_secs = resolution.matched_lock_secs;
@@ -5860,20 +5856,19 @@ impl LiquifactEscrow {
         Self::set_persistent_investor_contribution(&env, investor.clone(), new_contribution);
 
         if prev == 0 {
+            let next_funder_count = cur_funder_count
+                .checked_add(1)
+                .unwrap_or_else(|| fail(&env, EscrowError::UniqueInvestorHardCapReached));
             env.storage().instance().set(
                 &DataKey::UniqueFunderCount,
-                &cur_funder_count.saturating_add(1),
+                &next_funder_count,
             );
 
-            let mut index: Vec<Address> = env
-                .storage()
-                .instance()
-                .get(&keys::investor_index())
-                .unwrap_or_else(|| Vec::new(&env));
-            index.push_back(investor.clone());
-            env.storage()
-                .instance()
-                .set(&keys::investor_index(), &index);
+            if !investor_is_indexed {
+                env.storage()
+                    .instance()
+                    .set(&keys::investor_index(), &investor_index.unwrap());
+            }
         }
 
         env.storage().instance().set(&DataKey::Escrow, &escrow);
@@ -5885,7 +5880,7 @@ impl LiquifactEscrow {
         #[cfg(any(test, feature = "testutils"))]
         register_mock_token_if_needed(&env, &token_addr);
 
-        external_calls::transfer_into_escrow_with_balance_checks(
+        external_calls::transfer_funding_token_inbound_with_balance_checks(
             &env,
             &token_addr,
             &investor,
