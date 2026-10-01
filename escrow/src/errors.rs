@@ -1,52 +1,54 @@
 use soroban_sdk::contracterror;
 
-/// Error codes for the Liquifact escrow contract.
-///
-/// ## Deterministic failure recovery invariants
+#// Error codes for the escrow contract.
 
 ///
-/// The escrow mutates persistent state and invokes external token contracts.
-/// Any operation that can partially complete must be recoverable and
-/// observable. To make recovery deterministic, the error taxonomy separates:
+/// # Invariants
 ///
-/// - **Permanent rejections**: invalid input, authorization failures,
-///   invariant violations. Retrying with the same arguments will always
-///   fail the same way; callers must change inputs or state.
-/// - **Transient / recoverable failures**: dependency (token) failures or in
-///   flight concurrency contention. These carry a stable code so clients
-///   can retry with backoff without guessing whether state was mutated.
-/// - **Partial completion markers**: distinct codes for the case where a
-///   multi-step operation may have applied some but not all of its effects.
-///   These codes tell the caller to re-read state before retrying.
+/// - Every error variant has a stable, unique numeric code. Codes are
+///   part of the on-chain ABI and must not be renumbered or reused.
+/// - Error codes are grouped by domain with reserved ranges so new errors
+///   can be added without collisions.
+/// - The `u32` representation is deterministic and matches the numeric
+///   code returned to callers and surfaced in test assertions.
 ///
-/// Every variant is explicitly numbered and numbers are never reused or
-/// reordered, because clients and off-chain monitoring depend on them being
-/// stable across deployments.
-
-#[contracterror]
-#derive(Copy, Clone, Debug, Eq, PartialE, Ord, PartialOrd)]
+/// # Failure recovery
+///
+/// Errors are the observable signal for failure recovery: a caller can
+/// distinguish a retryable condition (e.g. `PauseToggleRateLimitExceeded`)
+/// from a permanent rejection (e.g. `AlreadyInitialized`) without any
+/// additional off-chain state. No error variant carries sensitive data;
+/// all context is expressed through the code itself.
+#//
+/// # Compatibility
+///
+/// New variants must be appended to the end of their domain range or in
+/// a fresh reserved range. Removing or renumbering existing variants is
+/// a breaking change for off-chain consumers.
+@contracterror
+H[ derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(u32)]
 pub enum EscrowError {
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Initialization & State Errors (1..19)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     AlreadyInitialized = 1,
     NotInitialized = 2,
     InvalidStatus = 3,
     EscrowExpired = 4,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Authorization & Admin Errors (20..35)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     Unauthorized = 20,
     AdminAlreadySet = 21,
     PendingAdminNotFound = 22,
     AdminTransferTimelockNotElapsed = 23,
     EmptyRecoveryReason = 24,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Token / SEP-41 Safety Wrapper Errors (36..45)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     FundingTokenTransferFailed = 36,
     BalanceMismatchAfterTransfer = 37,
     NonPositiveTransferAmount = 38,
@@ -71,9 +73,9 @@ pub enum EscrowError {
     /// idempotent without a reconciliation step.
     TokenPartialTransfer = 45,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Funding & Contribution Errors (50..69)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     FundingTargetExceeded = 50,
     ZeroContributionAmount = 51,
     InvestorCapReached = 52,
@@ -87,9 +89,9 @@ pub enum EscrowError {
     /// prevents changing off-chain pointers that clients use to reconcile identity.
     RegistryImmutableAfterFunding = 56,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Batch Operations Errors (80..89)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     FundingBatchEmpty = 80,
     FundingBatchExceedsLimit = 81,
     FundingBatchInvalidAmount = 82,
@@ -101,9 +103,9 @@ pub enum EscrowError {
     /// re-read claim state and resume from the last unclaimed entry.
     ClaimBatchPartialCompletion = 87,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Migration & Upgrade Errors (90..99)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     MigrationVersionMismatch = 90,
     AlreadyCurrentSchemaVersion = 91,
     NoMigrationPath = 92,
@@ -112,9 +114,9 @@ pub enum EscrowError {
     /// migration steps are idempotent.
     MigrationInterrupted = 93,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Settlement & Bounds Validation Errors (100..109)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     SettlementAmountInvalid = 100,
     MaturityNotReached = 101,
     EscrowNotInFundedState = 102,
@@ -123,20 +125,20 @@ pub enum EscrowError {
     /// state and resume remaining legs; already-settled legs are skipped.
     SettlementPartialCompletion = 104,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Legal Hold & Operational Pause (200..209)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     LegalHoldActive = 200,
     ContractPaused = 201,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // SME Collateral Errors (300..309)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     NoCollateralToClear = 300,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Pause Configuration & Rate-Limit Errors (230..239)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     /// `LiquifactEscrow::set_pause_max_duration` received a duration outside
     /// `MIN_PAUSE_MAX_DURATION_SECS`..=[`MAX_PAUSE_MAX_DURATION_SECS`. Zero is always allowed.
     PauseMaxDurationOutOfRange = 230,
@@ -152,9 +154,9 @@ pub enum EscrowError {
     /// `LiquifactEscrow::set_paused` blocked because the admin has exceeded the configured pause toggle rate limit.
     PauseToggleRateLimitExceeded = 234,
 
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     // Fee Schedule Errors (240..249)
-    // ----------------------------------------------------------------------------
+    // -----------------------------------------------------------------------------
     /// `LiquifactEscrow::set_fee_schedule` received a fee outside the schedule's declared min/max bounds.
     FeeScheduleOutOfBounds = 240,
     /// `LiquifactEscrow::set_fee_schedule` attempted to create a second pending schedule before the first activates.
