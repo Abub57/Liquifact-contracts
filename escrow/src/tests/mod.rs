@@ -56,14 +56,11 @@ pub(crate) fn assert_contract_error<T, E>(
 
 // Focused test tree for escrow behavior. Shared helpers live here so feature
 // modules stay assertion-focused and each test still owns a fresh Env.
-// Issue #1270 surgical scope: only `migration_errors` is enabled; other suites
-// are quarantined due to pre-existing API drift (init arity, nonce gating,
-// allowlist-limit removal) outside this compatibility fix. Re-enable tracked
-// separately.
-// mod admin;
-// mod attestations;
-// mod auth_matrix;
-// mod cap_validation;
+mod admin;
+mod admin_nonce;
+mod attestations;
+mod auth_matrix;
+mod cap_validation;
 // mod collateral_boundary_tests; // file not present in this tree
 // mod collateral_config_view;    // file not present in this tree
 // mod collateral_limit_setter;   // file not present in this tree

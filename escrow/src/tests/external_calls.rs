@@ -1036,3 +1036,188 @@ fn sweep_liability_floor_blocked_emits_no_dust_event() {
     assert_eq!(token.token.balance(&treasury), 0i128);
     assert_eq!(token.token.balance(&client.address), fund_amount);
 }
+
+// ── State invariant tests for Issue #1257 ──────────────────────────────────
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #253)")]
+fn test_outbound_self_transfer_rejected_pre_transfer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let same_addr = deploy_id(&env);
+    token.stellar.mint(&same_addr, &1000i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &same_addr, &same_addr, 500i128);
+}
+
+#[test]
+fn test_outbound_self_transfer_rejected_with_contract_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let same_addr = deploy_id(&env);
+    token.stellar.mint(&same_addr, &1000i128);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(
+            &env, &token.id, &same_addr, &same_addr, 500i128,
+        );
+    }));
+    assert!(result.is_err(), "self-transfer must panic");
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #254)")]
+fn test_inbound_self_transfer_rejected_pre_transfer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let same_addr = deploy_id(&env);
+    token.stellar.mint(&same_addr, &1000i128);
+
+    use super::super::external_calls::transfer_funding_token_inbound_with_balance_checks;
+    transfer_funding_token_inbound_with_balance_checks(
+        &env, &token.id, &same_addr, &same_addr, 500i128,
+    );
+}
+
+#[test]
+fn test_inbound_self_transfer_rejected_with_contract_error() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let same_addr = deploy_id(&env);
+    token.stellar.mint(&same_addr, &1000i128);
+
+    use super::super::external_calls::transfer_funding_token_inbound_with_balance_checks;
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_inbound_with_balance_checks(
+            &env, &token.id, &same_addr, &same_addr, 500i128,
+        );
+    }));
+    assert!(result.is_err(), "inbound self-transfer must panic");
+}
+
+#[test]
+fn test_outbound_distinct_addresses_succeed_after_self_transfer_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let amount = 1000i128;
+    token.stellar.mint(&holder, &amount);
+
+    assert_eq!(token.token.balance(&holder), amount);
+    assert_eq!(token.token.balance(&treasury), 0);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
+
+    assert_eq!(token.token.balance(&holder), 0);
+    assert_eq!(token.token.balance(&treasury), amount);
+}
+
+#[test]
+fn test_inbound_distinct_addresses_succeed_after_self_transfer_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let investor = Address::generate(&env);
+    let contract = deploy_id(&env);
+    let amount = 1000i128;
+    token.stellar.mint(&investor, &amount);
+
+    assert_eq!(token.token.balance(&investor), amount);
+    assert_eq!(token.token.balance(&contract), 0);
+
+    use super::super::external_calls::transfer_funding_token_inbound_with_balance_checks;
+    transfer_funding_token_inbound_with_balance_checks(
+        &env, &token.id, &investor, &contract, amount,
+    );
+
+    assert_eq!(token.token.balance(&investor), 0);
+    assert_eq!(token.token.balance(&contract), amount);
+}
+
+#[test]
+fn test_outbound_minimum_positive_amount_boundary() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let amount = 1i128;
+    token.stellar.mint(&holder, &amount);
+
+    let holder_before = token.token.balance(&holder);
+    let treasury_before = token.token.balance(&treasury);
+    assert_eq!(holder_before, 1);
+    assert_eq!(treasury_before, 0);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
+
+    let holder_after = token.token.balance(&holder);
+    let treasury_after = token.token.balance(&treasury);
+    assert_eq!(holder_before - holder_after, amount);
+    assert_eq!(treasury_after - treasury_before, amount);
+}
+
+#[test]
+fn test_outbound_exact_sender_balance_boundary() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let amount = 777i128;
+    token.stellar.mint(&holder, &amount);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
+
+    assert_eq!(token.token.balance(&holder), 0);
+    assert_eq!(token.token.balance(&treasury), amount);
+}
+
+#[test]
+#[should_panic]
+fn test_outbound_one_over_sender_balance_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let amount = 100i128;
+    token.stellar.mint(&holder, &amount);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount + 1);
+}
+
+#[test]
+fn test_invariant_balance_zero_after_two_transfers_total() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let total = 1000i128;
+    token.stellar.mint(&holder, &total);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 400i128);
+    assert_eq!(token.token.balance(&holder), 600i128);
+    assert_eq!(token.token.balance(&treasury), 400i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 600i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), total);
+}
