@@ -654,7 +654,50 @@ mod tests {
     // deterministic -- the final state and the number of events are well
     // defined.
     #[test]
-    fn test_duplicate_write_is_deterministic() {
+    fn test_set_yield_tier_non_admin_rejected() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, YieldTierContract);
+        let client = YieldTierContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init(&admin);
+
+        // non-admin will fail auth without mock_all_auths
+        let result = client.try_set_yield_tier(&YieldTierState::Tier1);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_set_yield_tier_rejects_unset_state() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, YieldTierContract);
+        let client = YieldTierContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init(&admin);
+
+        let result = client.try_set_yield_tier(&YieldTierState::Unset);
+        assert!(matches!(result, Ok(Err(Error::InvalidYieldTier))));
+    }
+
+    #[test]
+    fn test_set_yield_tier_repeated_value_is_idempotent() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, YieldTierContract);
+        let client = YieldTierContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        client.init(&admin);
+
+        client.set_yield_tier(&YieldTierState::Tier2);
+        client.set_yield_tier(&YieldTierState::Tier2);
+        assert_eq!(client.get_yield_tier(), YieldTierState::Tier2);
+    }
+
+    #[test]
+    fn test_set_yield_tier_emits_event() {
         let env = Env::default();
         env.mock_all_auths();
         let contract_id = env.register_contract(None, YieldTierContract);

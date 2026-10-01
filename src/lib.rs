@@ -21,9 +21,7 @@ const VERSION_KEY: Symbol = symbol_short!("VERSION");
 #[repr(u32)]
 pub enum Error {
     NotAuthorized = 1,
-    NotInitialized = 2,
-    AlreadyInitialized = 3,
-    StaleVersion = 4,
+    InvalidYieldTier = 2,
 }
 
 /// Persisted yield-tier state.
@@ -43,15 +41,13 @@ pub enum YieldTierState {
 #[contract]
 pub struct YieldTierContract;
 
-/// State invariants owned by this contract:
-/// 1. ADMIN_KEY is written at most once (during `init`) and never changed by any other entry point.
-/// 2. Every mutating entry point (`upgrade`, `set_yield_tier`) requires the
-//    stored admin's authorization before any state change or external effect.
-/// 3. YIELD_TIER_KEY is only written after authorization succeeds, so a
-///    rejected call leaves the previous tier intact.
-/// 4. `upgrade` performs the WASM update and emits the event as a single
-///    authorized transition; failure of the deployer call aborts the tx.
-/// 5. `get_yield_tier` is pure and never mutates storage.
+fn validate_yield_tier(tier: &YieldTierState) -> Result<(), Error> {
+    match tier {
+        YieldTierState::Tier1 | YieldTierState::Tier2 | YieldTierState::Tier3 => Ok(()),
+        YieldTierState::Unset => Err(Error::InvalidYieldTier),
+    }
+}
+
 #[contractimpl]
 impl YieldTierContract {
     /// Initializes the contract with an authorized admin.
@@ -124,10 +120,12 @@ impl YieldTierContract {
 
     /// Sets the yield-tier state (admin-only).
     ///
-    /// Monotonically increments version counter. Retries and repeated calls with
-    /// the same value are deterministic and idempotent from the state perspective.
+    /// Valid payloads are constrained to the concrete tier states. `Unset` is a
+    /// read-time default and is not allowed as a persisted configuration value.
     pub fn set_yield_tier(env: Env, tier: YieldTierState) -> Result<(), Error> {
-        Self::require_admin(&env)?;
+        let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
+        admin.require_auth();
+        validate_yield_tier(&tier)?;
         env.storage().instance().set(&YIELD_TIER_KEY, &tier);
 
         let current_version = Self::get_version(env.clone());
