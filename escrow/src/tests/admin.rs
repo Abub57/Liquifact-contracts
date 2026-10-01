@@ -252,6 +252,36 @@ fn test_set_protocol_fee_bps_rejects_out_of_range_values() {
 }
 
 #[test]
+fn test_set_protocol_fee_bps_accepts_inclusive_bounds_and_rejections_are_atomic() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    assert_eq!(client.set_protocol_fee_bps(&1i64), 1i64);
+    assert_eq!(client.set_protocol_fee_bps(&0i64), 0i64);
+    assert_eq!(client.get_protocol_fee_bps(), 0i64);
+
+    assert_eq!(client.set_protocol_fee_bps(&10_000i64), 10_000i64);
+    let events_before_rejections = env.events().all().events().len();
+
+    assert_contract_error(
+        client.try_set_protocol_fee_bps(&-1i64),
+        EscrowError::ProtocolFeeBpsOutOfRange,
+    );
+    assert_eq!(client.get_protocol_fee_bps(), 10_000i64);
+    assert_eq!(env.events().all().events().len(), events_before_rejections);
+
+    assert_contract_error(
+        client.try_set_protocol_fee_bps(&10_001i64),
+        EscrowError::ProtocolFeeBpsOutOfRange,
+    );
+    assert_eq!(client.get_protocol_fee_bps(), 10_000i64);
+    assert_eq!(env.events().all().events().len(), events_before_rejections);
+}
+
+#[test]
 #[should_panic]
 fn test_set_protocol_fee_bps_requires_admin_auth() {
     let env = Env::default();
@@ -676,6 +706,7 @@ fn test_propose_admin_rejects_unchanged_pending_admin() {
         client.try_propose_admin(&pending, &None),
         EscrowError::PendingAdminUnchanged,
     );
+    assert_eq!(client.get_pending_admin(), Some(pending));
 }
 
 #[test]
@@ -1082,7 +1113,226 @@ fn test_migrate_from_zero_uninitialized_panics() {
     env.mock_all_auths();
     let client = deploy(&env);
     // Uninitialized storage returns version 0; migrate(0) hits the no-path branch.
-    client.migrate(&0u32);
+    client.migrate(&0u32, &0u32);
+}
+
+// ── migrate() exhaustive typed-error contract tests ──────────────────────────
+//
+// migrate() is intentionally a no-op in the current release. Every path
+// requires admin auth, validates the version, and terminates with one of three
+// typed errors. These tests prove each branch fires correctly, that auth is
+// checked before version reads, and that DataKey::Version is never mutated.
+//
+// See docs/OPERATOR_RUNBOOK.md §2 for the operator-side migration matrix.
+// See escrow/src/lib.rs migrate() rustdoc for the per-error classification.
+
+/// Unauthenticated callers must be rejected before any version check.
+/// If auth were checked after the version guard, a mismatched `from_version`
+/// could leak via `MigrationVersionMismatch` instead of the auth failure.
+#[test]
+fn test_migrate_rejects_non_admin_before_version_check() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    env.mock_auths(&[]);
+    let result = client.try_migrate(&99u32, &0u32);
+
+    assert!(
+        result.is_err(),
+        "migrate should reject an unauthenticated call"
+    );
+    assert!(
+        !matches!(
+            result,
+            Err(Err(soroban_sdk::InvokeError::Contract(code)))
+                if code == EscrowError::MigrationVersionMismatch as u32
+        ),
+        "migrate must not reach version checks before admin auth (got MigrationVersionMismatch)"
+    );
+}
+
+/// `migrate(SCHEMA_VERSION - 1)` after `init` (which stores
+/// `SCHEMA_VERSION == 6`) must raise `MigrationVersionMismatch` because the
+/// stored version (6) does not equal the claimed source version (5).
+#[test]
+fn test_migrate_version_mismatch_stored_neq_claimed() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    assert_contract_error(
+        client.try_migrate(&(SCHEMA_VERSION - 1), &0u32),
+        EscrowError::MigrationVersionMismatch,
+    );
+    assert_eq!(
+        client.get_version(),
+        SCHEMA_VERSION,
+        "DataKey::Version must not change on MigrationVersionMismatch"
+    );
+}
+
+/// Claiming a far-below `from_version` (0) against stored version 6 must
+/// also raise `MigrationVersionMismatch`, not `NoMigrationPath`.
+#[test]
+fn test_migrate_far_below_stored_raises_mismatch() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    assert_contract_error(
+        client.try_migrate(&0u32, &0u32),
+        EscrowError::MigrationVersionMismatch,
+    );
+    assert_eq!(client.get_version(), SCHEMA_VERSION);
+}
+
+/// Calling `migrate` with `from_version == SCHEMA_VERSION` (boundary: the
+/// contract is already at the latest schema) must raise
+/// `AlreadyCurrentSchemaVersion`.
+#[test]
+fn test_migrate_at_schema_version_raises_already_current() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    assert_contract_error(
+        client.try_migrate(&SCHEMA_VERSION, &0u32),
+        EscrowError::AlreadyCurrentSchemaVersion,
+    );
+    assert_eq!(client.get_version(), SCHEMA_VERSION);
+}
+
+/// Any `from_version > SCHEMA_VERSION` claims a schema newer than the
+/// contract knows about; this also maps to
+/// `AlreadyCurrentSchemaVersion`.
+#[test]
+fn test_migrate_above_schema_version_raises_already_current() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    assert_contract_error(
+        client.try_migrate(&(SCHEMA_VERSION + 1), &0u32),
+        EscrowError::AlreadyCurrentSchemaVersion,
+    );
+    assert_eq!(client.get_version(), SCHEMA_VERSION);
+}
+
+/// When the stored version is below `SCHEMA_VERSION` and matches the claimed
+/// `from_version`, the contract reaches the terminal `NoMigrationPath` branch.
+#[test]
+fn test_migrate_below_schema_version_matching_stored_raises_no_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let older = SCHEMA_VERSION - 1;
+    env.as_contract(&client.address, || {
+        env.storage().instance().set(&DataKey::Version, &older);
+    });
+
+    assert_contract_error(
+        client.try_migrate(&older, &0u32),
+        EscrowError::NoMigrationPath,
+    );
+    assert_eq!(
+        client.get_version(),
+        older,
+        "DataKey::Version must not change on NoMigrationPath"
+    );
+}
+
+/// Every `from_version` in `[1, SCHEMA_VERSION - 1]` with a matching stored
+/// version must raise `NoMigrationPath` — exhaustive coverage of the
+/// "no implemented path" branch for all known historical versions.
+#[test]
+fn test_migrate_all_historical_versions_raise_no_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    for &historical in &[1u32, 2, 3, 4, 5] {
+        let (client, admin, sme) = setup(&env);
+        default_init(&client, &env, &admin, &sme);
+        env.as_contract(&client.address, || {
+            env.storage().instance().set(&DataKey::Version, &historical);
+        });
+
+        assert_contract_error(
+            client.try_migrate(&historical, &0u32),
+            EscrowError::NoMigrationPath,
+        );
+        assert_eq!(client.get_version(), historical);
+    }
+}
+
+/// An uninitialized contract has `DataKey::Version` absent from storage,
+/// which `.get(...).unwrap_or(0)` maps to `0`. Calling `migrate(0)` must
+/// raise `NoMigrationPath`, not panic or silently succeed.
+#[test]
+fn test_migrate_from_zero_uninitialized_raises_no_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    assert_contract_error(
+        client.try_migrate(&0u32, &0u32),
+        EscrowError::NoMigrationPath,
+    );
+
+    let stored_after: u32 = env.as_contract(&client.address, || {
+        env.storage().instance().get(&DataKey::Version).unwrap_or(0)
+    });
+    assert_eq!(
+        stored_after, 0,
+        "DataKey::Version must remain 0 (absent) on NoMigrationPath"
+    );
+}
+
+/// Cross-branch immutability sweep: for representative values in every
+/// error branch, confirm `DataKey::Version` is unchanged after the call.
+#[test]
+fn test_migrate_version_immutable_across_all_error_branches() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let cases: &[(u32, u32, EscrowError)] = &[
+        (6, 5, EscrowError::MigrationVersionMismatch),
+        (6, 6, EscrowError::AlreadyCurrentSchemaVersion),
+        (6, 7, EscrowError::AlreadyCurrentSchemaVersion),
+        (5, 5, EscrowError::NoMigrationPath),
+        (0, 0, EscrowError::NoMigrationPath),
+    ];
+
+    for &(stored, claimed, expected) in cases {
+        let (client, admin, sme) = setup(&env);
+
+        if stored == 0 {
+            // Uninitialized: just deploy; do not call init.
+        } else {
+            default_init(&client, &env, &admin, &sme);
+            if stored != SCHEMA_VERSION {
+                env.as_contract(&client.address, || {
+                    env.storage().instance().set(&DataKey::Version, &stored);
+                });
+            }
+        }
+
+        let result = client.try_migrate(&claimed, &0u32);
+        assert_contract_error(result, expected);
+
+        let actual_stored: u32 = env.as_contract(&client.address, || {
+            env.storage()
+                .instance()
+                .get(&DataKey::Version)
+                .unwrap_or(stored)
+        });
+        assert_eq!(
+            actual_stored, stored,
+            "DataKey::Version changed for stored={stored}, claimed={claimed}"
+        );
+    }
 }
 
 #[test]
@@ -3356,4 +3606,35 @@ fn test_pending_admin_remaining_consistent_with_accept_admin() {
     env.ledger().set_timestamp(expiry + 1);
     assert_eq!(client.get_pending_admin_remaining_secs(), Some(0));
     assert_contract_error(client.try_accept_admin(), EscrowError::AdminProposalExpired);
+}
+
+// A recovery is an administrative state transition, not a best-effort cleanup call. It must
+// participate in the same nonce serialization as proposal and cancellation so a delayed retry
+// cannot remove a proposal created after the retry was signed.
+#[test]
+fn test_recover_admin_replay_and_stale_nonce_are_harmless() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let abandoned = Address::generate(&env);
+    client.propose_admin(&abandoned, &0u32);
+    let expiry = client.get_pending_admin_expiry().unwrap();
+    env.ledger().set_timestamp(expiry + 1);
+
+    client.recover_admin(&soroban_sdk::String::from_str(&env, "expired"), &1u32);
+    assert_eq!(client.get_pending_admin(), None);
+    assert_contract_error(
+        client.try_recover_admin(&soroban_sdk::String::from_str(&env, "replay"), &1u32),
+        EscrowError::AdminNonceMismatch,
+    );
+    assert_eq!(client.get_admin_nonce(), 2u32);
+
+    let successor = Address::generate(&env);
+    client.propose_admin(&successor, &2u32);
+    assert_contract_error(
+        client.try_recover_admin(&soroban_sdk::String::from_str(&env, "delayed"), &1u32),
+        EscrowError::AdminNonceMismatch,
+    );
+    assert_eq!(client.get_pending_admin(), Some(successor));
 }

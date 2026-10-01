@@ -1,3 +1,4 @@
+//! Validation boundaries for [`LiquifactEscrow::get_attestation_config`].
 //! Tests for [`LiquifactEscrow::get_attestation_config`].
 //!
 //! Covers:
@@ -8,6 +9,7 @@
 //! - Config matches the individual getters/state.
 //! - Idempotency (pure read, no state mutation).
 //! - Struct shape stability (destructuring).
+//! - Boundary values for append/revoke batch limits and read page size.
 
 use super::super::{
     AttestationConfig, LiquifactEscrow, LiquifactEscrowClient, MAX_ATTESTATION_APPEND_BATCH,
@@ -264,4 +266,305 @@ fn test_config_struct_shape() {
     assert_eq!(max_read_page, MAX_ATTESTATION_READ_PAGE);
     assert!(primary_bound);
     assert_eq!(append_log_length, 1);
+}
+
+// ── boundary tests ───────────────────────────────────────────────────────────
+
+/// `max_append_entries` boundary: appending exactly the maximum number of
+/// entries must succeed, and the config must report the boundary value.
+#[test]
+fn test_append_entries_boundary_exact_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let config = client.get_attestation_config();
+    let max = config.max_append_entries;
+
+    // Append exactly `max` entries — must succeed.
+    for i in 0..max {
+        let mut bytes = [0u8; 32];
+        bytes[0] = (i & 0xff) as u8;
+        bytes[1] = ((i >> 8) & 0xff) as u8;
+        let hash = BytesN::from_array(&env, &bytes);
+        client.append_attestation_digest(&hash);
+    }
+
+    let config = client.get_attestation_config();
+    assert_eq!(
+        config.append_log_length, max,
+        "append_log_length must equal max_append_entries at the boundary"
+    );
+}
+
+/// `max_append_entries` boundary: appending one more than the maximum must
+/// be rejected deterministically.
+#[test]
+#[should_panic]
+fn test_append_entries_boundary_exceeds_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let config = client.get_attestation_config();
+    let max = config.max_append_entries;
+
+    // Append `max` entries — must succeed.
+    for i in 0..max {
+        let mut bytes = [0u8; 32];
+        bytes[0] = (i & 0xff) as u8;
+        bytes[1] = ((i >> 8) & 0xff) as u8;
+        let hash = BytesN::from_array(&env, &bytes);
+        client.append_attestation_digest(&hash);
+    }
+
+    // One more must panic.
+    let extra = BytesN::from_array(&env, &[0xffu8; 32]);
+    client.append_attestation_digest(&extra);
+}
+
+/// `max_revoke_batch` boundary: revoking exactly the maximum batch size must
+/// succeed.
+#[test]
+fn test_revoke_batch_boundary_exact_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let config = client.get_attestation_config();
+    let max = config.max_revoke_batch;
+
+    // Append `max` entries.
+    for i in 0..max {
+        let mut bytes = [0u8; 32];
+        bytes[0] = (i & 0xff) as u8;
+        bytes[1] = ((i >> 8) & 0xff) as u8;
+        let hash = BytesN::from_array(&env, &bytes);
+        client.append_attestation_digest(&hash);
+    }
+
+    // Revoke all `max` entries in one batch — must succeed.
+    for i in 0..max {
+        client.revoke_attestation_digest(&i);
+    }
+
+    // Log length must be unchanged (revocation does not remove entries).
+    let config = client.get_attestation_config();
+    assert_eq!(
+        config.append_log_length, max,
+        "revoke must not reduce append_log_length at the boundary"
+    );
+}
+
+/// `max_revoke_batch` boundary: revoking one more than the maximum batch size
+/// must be rejected deterministically.
+#[test]
+#[should_panic]
+fn test_revoke_batch_boundary_exceeds_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let config = client.get_attestation_config();
+    let max = config.max_revoke_batch;
+
+    // Append `max + 1` entries.
+    for i in 0..=max {
+        let mut bytes = [0u8; 32];
+        bytes[0] = (i & 0xff) as u8;
+        bytes[1] = ((i >> 8) & 0xff) as u8;
+        let hash = BytesN::from_array(&env, &bytes);
+        client.append_attestation_digest(&hash);
+    }
+
+    // Revoke `max + 1` entries in one batch — must panic.
+    for i in 0..=max {
+        client.revoke_attestation_digest(&i);
+    }
+}
+
+/// `max_read_page` boundary: reading exactly the maximum page size must
+/// succeed and return the expected number of entries.
+#[test]
+fn test_read_page_boundary_exact_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let config = client.get_attestation_config();
+    let max_page = config.max_read_page;
+
+    // Append `max_page` entries.
+    for i in 0..max_page {
+        let mut bytes = [0u8; 32];
+        bytes[0] = (i & 0xff) as u8;
+        bytes[1] = ((i >> 8) & 0xff) as u8;
+        let hash = BytesN::from_array(&env, &bytes);
+        client.append_attestation_digest(&hash);
+    }
+
+    // Read exactly `max_page` entries — must succeed.
+    let page = client.get_attestation_append_log();
+    assert_eq!(
+        page.len() as u32, max_page,
+        "read page must contain exactly max_read_page entries at the boundary"
+    );
+}
+
+/// `max_read_page` boundary: reading one more than the maximum page size
+/// must be rejected deterministically.
+#[test]
+#[should_panic]
+fn test_read_page_boundary_exceeds_max() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let config = client.get_attestation_config();
+    let max_page = config.max_read_page;
+
+    // Append `max_page + 1` entries.
+    for i in 0..=max_page {
+        let mut bytes = [0u8; 32];
+        bytes[0] = (i & 0xff) as u8;
+        bytes[1] = ((i >> 8) & 0xff) as u8;
+        let hash = BytesN::from_array(&env, &bytes);
+        client.append_attestation_digest(&hash);
+    }
+
+    // Attempt to read `max_page + 1` entries — must panic.
+    let page = client.get_attestation_append_log();
+    assert_eq!(page.len() as u32, max_page + 1);
+}
+
+/// Duplicate submissions: appending the same digest twice must be handled
+/// deterministically (either accepted as distinct entries or rejected).
+#[test]
+fn test_duplicate_append_deterministic() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let hash = BytesN::from_array(&env, &[0x77u8; 32]);
+
+    // First append.
+    client.append_attestation_digest(&hash);
+    let len_after_first = client.get_attestation_config().append_log_length;
+
+    // Second append of the same hash — must be deterministic.
+    client.append_attestation_digest(&hash);
+    let len_after_second = client.get_attestation_config().append_log_length;
+
+    // The log must grow by exactly one (duplicates are distinct entries).
+    assert_eq!(
+        len_after_second,
+        len_after_first + 1,
+        "duplicate append must be deterministic and add exactly one entry"
+    );
+}
+
+/// Duplicate submissions: binding the same primary hash twice must be
+/// deterministic (idempotent or rejected).
+#[test]
+fn test_duplicate_bind_deterministic() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let hash = BytesN::from_array(&env, &[0x88u8; 32]);
+
+    // First bind.
+    client.bind_primary_attestation_hash(&hash);
+    let bound_after_first = client.get_attestation_config().primary_bound;
+
+    // Second bind of the same hash — must be deterministic.
+    client.bind_primary_attestation_hash(&hash);
+    let bound_after_second = client.get_attestation_config().primary_bound;
+
+    assert_eq!(
+        bound_after_first, bound_after_second,
+        "duplicate bind must be deterministic"
+    );
+    assert!(bound_after_second, "primary_bound must remain true after duplicate bind");
+}
+
+/// Invalid input: appending a zero hash must be handled deterministically.
+#[test]
+fn test_invalid_zero_hash_append_deterministic() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let zero_hash = BytesN::from_array(&env, &[0u8; 32]);
+
+    // Appending a zero hash must be deterministic (either accepted or rejected).
+    // We verify the config remains consistent regardless of outcome.
+    let before = client.get_attestation_config().append_log_length;
+    client.append_attestation_digest(&zero_hash);
+    let after = client.get_attestation_config().append_log_length;
+
+    assert!(
+        after == before || after == before + 1,
+        "zero-hash append must be deterministic (no partial state)"
+    );
+}
+
+/// Invalid input: revoking an out-of-bounds index must be rejected
+/// deterministically.
+#[test]
+#[should_panic]
+fn test_invalid_revoke_index_out_of_bounds() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    // Revoke index 0 when the log is empty — must panic.
+    client.revoke_attestation_digest(&0);
+}
+
+/// Regression: config must remain consistent after a rejected operation.
+#[test]
+fn test_config_consistent_after_rejected_operation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+
+    let admin = init_escrow(&env, &client);
+
+    let hash = BytesN::from_array(&env, &[0x33u8; 32]);
+    client.append_attestation_digest(&hash);
+
+    let before = client.get_attestation_config();
+
+    // Attempt an invalid revoke (out of bounds) — must not corrupt state.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.revoke_attestation_digest(&999);
+    }));
+    assert!(result.is_err(), "out-of-bounds revoke must panic");
+
+    let after = client.get_attestation_config();
+    assert_eq!(
+        before, after,
+        "config must be unchanged after a rejected operation"
+    );
 }

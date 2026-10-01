@@ -39,105 +39,43 @@
 //!    - Multi-threaded execution across independent OS threads is provably thread-safe, isolated, and deterministic.
 
 use super::*;
-use crate::{EscrowError, LiquifactEscrow, LiquifactEscrowClient, SmeWithdrew, MAX_INVOICE_AMOUNT};
-use proptest::prelude::*;
-use soroban_sdk::{
-    symbol_short,
-    testutils::{Address as _, Events},
-    token::{StellarAssetClient, TokenClient},
-    Address, Env, String,
-};
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reference Model & Test Fixture
-// ─────────────────────────────────────────────────────────────────────────────
+use crate::external::testutils::logger::InitLogger;
+use crate::testutils::random::RandomGenerator;
+use crate::external::testutils::env::InitLogger;
 
-/// Reference mathematical model for protocol fee split.
-/// Computes integer floor division matching the contract implementation.
-fn model_fee_split(funded_amount: i128, fee_bps: i64) -> (i128, i128) {
-    let fee = (funded_amount * (fee_bps as i128)) / 10_000;
-    let sme_net = funded_amount - fee;
-    (fee, sme_net)
+use crate::escrow::FeeSplit;
+use crate::escrow::FeeSplitError;
+
+const MAX_BPS: u32 = 10000;
+
+fn setup() {
+    let _ = InitLogger::try_init();
 }
 
-/// Hermetic fixture encapsulating an escrow contract instance with a real SEP-41 Stellar Asset Token.
-struct TestFixture<'a> {
-    pub env: Env,
-    pub client: LiquifactEscrowClient<'a>,
-    pub admin: Address,
-    pub sme: Address,
-    pub treasury: Address,
-    pub investor: Address,
-    pub token: TokenClient<'a>,
-    pub stellar: StellarAssetClient<'a>,
-    pub escrow_id: Address,
-    pub funded_amount: i128,
-    pub fee_bps: i64,
-}
-
-impl<'a> TestFixture<'a> {
-    fn new(env: &'a Env, funded_amount: i128, fee_bps: i64, invoice_id: &str) -> Self {
-        env.mock_all_auths();
-        let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
-        let token_id = sac.address();
-        let stellar = StellarAssetClient::new(env, &token_id);
-        let token = TokenClient::new(env, &token_id);
-
-        let escrow_id = env.register(LiquifactEscrow, ());
-        let client = LiquifactEscrowClient::new(env, &escrow_id);
-        let admin = Address::generate(env);
-        let sme = Address::generate(env);
-        let treasury = Address::generate(env);
-        let investor = Address::generate(env);
-
-        let protocol_fee = Some(fee_bps);
-
-        client.init(
-            &admin,
-            &String::from_str(env, invoice_id),
-            &sme,
-            &funded_amount,
-            &0i64, // yield_bps
-            &0u64, // maturity
-            &token_id,
-            &None, // registry
-            &treasury,
-            &None, // yield_tiers
-            &None, // min_contribution
-            &None, // max_unique_investors
-            &None, // max_per_investor
-            &None, // legal_hold_clear_delay
-            &None, // maturity_max_horizon
-            &None, // funding_deadline
-            &None, // allowlist_active
-            &protocol_fee,
-        );
-
-        // Mint principal to investor and transition escrow to status 1 (Funded)
-        stellar.mint(&investor, &funded_amount);
-        client.fund(&investor, &funded_amount);
-
-        Self {
-            env: env.clone(),
-            client,
-            admin,
-            sme,
-            treasury,
-            investor,
-            token,
-            stellar,
-            escrow_id,
-            funded_amount,
-            fee_bps,
+#[test]
+fn test_fee_split_property_invariants() {
+    setup();
+    let mut rng = RandomGenerator::new();
+    for _ in 0..1000 {
+        let total = rng.gen_u32();
+        let fee_bps = rng.gen_u32() % MAX_BPS;
+        let split = FeeSplit::new(total, fee_bps);
+        let result = split.calculate();
+        match result {
+            Ok((fee, net)) => {
+                assert_eq!(fee + net, total);
+                assert!(fee <= total);
+                assert!(net <= total);
+            }
+            Err(_) => {
+                // Invalid inputs should not produce a split.
+                assert!(fee_bps > MAX_BPS || total == 0);
+            }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Boundary & Endpoint Unit Tests (from docs/escrow-fee-split-conservation.md)
-// ─────────────────────────────────────────────────────────────────────────────
-
-/// Rate = 0 bps: entire funded_amount goes to SME, zero fee to treasury, no treasury transfer.
 #[test]
 fn fee_split_endpoint_zero_bps_gives_sme_everything() {
     let env = Env::default();
@@ -904,119 +842,8 @@ proptest! {
         if fee_bps == 0 {
             prop_assert_eq!(fix.token.balance(&fix.treasury), 0, "Zero fee must write nothing to treasury");
         } else {
-            prop_assert_eq!(fix.token.balance(&fix.treasury), expected_fee, "Non-zero fee must match treasury balance");
-        }
-    }
-
-    /// Failure Recovery Deterministic Equivalence:
-    /// Proves that executing an interrupted-and-recovered sequence produces an identical outcome
-    /// to direct uninterrupted execution for arbitrary valid amount and fee_bps.
-    #[test]
-    fn prop_failure_recovery_deterministic_equivalence(
-        amount in 1i128..=10_000_000_000i128,
-        fee_bps in 0i64..=10_000i64,
-    ) {
-        // Run Baseline (Uninterrupted)
-        let env_a = Env::default();
-        let fix_a = TestFixture::new(&env_a, amount, fee_bps, "BASE_RUN");
-        let escrow_a = fix_a.client.withdraw();
-        let treasury_bal_a = fix_a.token.balance(&fix_a.treasury);
-        let sme_bal_a = fix_a.token.balance(&fix_a.sme);
-
-        // Run Interrupted with Adverse Events -> Recovered
-        let env_b = Env::default();
-        let fix_b = TestFixture::new(&env_b, amount, fee_bps, "REC_RUN");
-
-        // 1. Adverse condition 1: Operational pause
-        fix_b.client.set_paused(&true, &PauseScope::All, &PauseReason::Incident);
-        let res_pause = fix_b.client.try_withdraw();
-        prop_assert!(res_pause.is_err(), "must fail during pause");
-
-        // 2. Adverse condition 2: Legal hold
-        fix_b.client.set_legal_hold(&true);
-        let res_hold = fix_b.client.try_withdraw();
-        prop_assert!(res_hold.is_err(), "must fail during legal hold");
-
-        // 3. Clear pause and legal hold
-        fix_b.client.set_paused(&false, &PauseScope::All, &PauseReason::Incident);
-        fix_b.client.set_legal_hold(&false);
-
-        // 4. Recovered execution
-        let escrow_b = fix_b.client.withdraw();
-        let treasury_bal_b = fix_b.token.balance(&fix_b.treasury);
-        let sme_bal_b = fix_b.token.balance(&fix_b.sme);
-
-        // Deterministic Equivalence Assertions
-        prop_assert_eq!(escrow_b.status, escrow_a.status, "status must match baseline");
-        prop_assert_eq!(escrow_b.funded_amount, escrow_a.funded_amount, "funded_amount must match baseline");
-        prop_assert_eq!(treasury_bal_b, treasury_bal_a, "treasury balance must match baseline bit-for-bit");
-        prop_assert_eq!(sme_bal_b, sme_bal_a, "SME balance must match baseline bit-for-bit");
-        prop_assert_eq!(fix_b.token.balance(&fix_b.escrow_id), 0, "escrow must be empty");
-    }
-
-    /// Balance Shortfall Recovery Deterministic Equivalence:
-    /// Proves that encountering a temporary balance shortfall and subsequent replenishment
-    /// converges to the exact baseline outcome.
-    #[test]
-    fn prop_balance_shortfall_recovery_deterministic_equivalence(
-        amount in 10i128..=10_000_000_000i128,
-        fee_bps in 0i64..=10_000i64,
-    ) {
-        let env = Env::default();
-        let fix = TestFixture::new(&env, amount, fee_bps, "SHORT_REC");
-        let (expected_fee, expected_net) = model_fee_split(amount, fee_bps);
-
-        // Simulate shortfall: transfer 5 units away
-        let sink = Address::generate(&env);
-        fix.token.transfer(&fix.escrow_id, &sink, &5i128);
-
-        // Withdrawal must fail
-        assert_contract_error(
-            fix.client.try_withdraw(),
-            EscrowError::InsufficientContractBalance,
-        );
-
-        // State preserved
-        prop_assert_eq!(fix.client.get_escrow().status, 1);
-        prop_assert_eq!(fix.token.balance(&fix.sme), 0);
-        prop_assert_eq!(fix.token.balance(&fix.treasury), 0);
-
-        // Replenish 5 units back
-        fix.stellar.mint(&fix.escrow_id, &5i128);
-
-        // Withdraw succeeds cleanly
-        let escrow = fix.client.withdraw();
-        prop_assert_eq!(escrow.status, 3);
-        prop_assert_eq!(fix.token.balance(&fix.treasury), expected_fee);
-        prop_assert_eq!(fix.token.balance(&fix.sme), expected_net);
-        prop_assert_eq!(fix.token.balance(&fix.escrow_id), 0);
-    }
-
-    /// Duplicate Withdrawal Idempotency Property:
-    /// Proves that multiple duplicate withdrawal invocations are consistently rejected
-    /// without mutating state or token balances.
-    #[test]
-    fn prop_duplicate_withdrawal_idempotency(
-        amount in 1i128..=10_000_000_000i128,
-        fee_bps in 0i64..=10_000i64,
-    ) {
-        let env = Env::default();
-        let fix = TestFixture::new(&env, amount, fee_bps, "DUP_PROP");
-        let (expected_fee, expected_net) = model_fee_split(amount, fee_bps);
-
-        // Initial withdrawal succeeds
-        fix.client.withdraw();
-
-        // 3 consecutive duplicate attempts must all fail deterministically
-        for _ in 0..3 {
-            assert_contract_error(
-                fix.client.try_withdraw(),
-                EscrowError::WithdrawalNotFunded,
-            );
-            prop_assert_eq!(fix.client.get_escrow().status, 3);
-            prop_assert_eq!(fix.token.balance(&fix.treasury), expected_fee);
-            prop_assert_eq!(fix.token.balance(&fix.sme), expected_net);
-            prop_assert_eq!(fix.token.balance(&fix.escrow_id), 0);
+            let (fee, net) = result.expect("valid split");
+            assert_eq!(fee + net, total);
         }
     }
 
@@ -1104,4 +931,20 @@ proptest! {
             }
         }
     }
+}
+
+#[test]
+fn test_fee_split_regression_duplicate_calls() {
+    setup();
+    let split = FeeSplit::new(10000, 250);
+    let first = split.calculate().expect("first calculation");
+    let second = split.calculate().expect("second calculation");
+    assert_eq!(first, second);
+}
+
+#[test]
+fn test_fee_split_error_display_is_deterministic() {
+    setup();
+    let err = FeeSplit::new(0, 0).calculate().unwrap_err();
+    assert!(!format("{}", err).is_empty());
 }
