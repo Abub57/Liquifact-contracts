@@ -155,6 +155,7 @@ use soroban_sdk::{
     symbol_short, token::TokenClient, Address, BytesN, Env, String, Symbol, Vec,
 };
 
+pub mod errors;
 pub mod external_calls;
 mod keys;
 
@@ -749,7 +750,7 @@ pub enum EscrowError {
     /// [`LiquifactEscrow::propose_admin`] repeated the already-pending admin address.
     PendingAdminUnchanged = 177,
     /// [`LiquifactEscrow::update_maturity`] set maturity to the same value as current.
-    MaturityUnchanged = 81,
+    MaturityUnchanged = 250,
     /// [`LiquifactEscrow::accept_admin`] called after the proposal expiry recorded at
     /// [`DataKey::PendingAdminExpiry`]. Re-propose to nominate a fresh successor.
     AdminProposalExpired = 85,
@@ -856,7 +857,7 @@ pub enum EscrowError {
     /// Admin-nonce replay protection: the supplied nonce does not match the current expected nonce.
     /// Returned for stale (old), duplicate (same), or future (out-of-sequence) nonces.
     /// Does not leak which specific mismatch occurred to avoid giving attackers information.
-    AdminNonceMismatch = 87,
+    AdminNonceMismatch = 252,
     /// The contract's funding-token balance is less than `funded_amount` at withdraw time.
     /// Funds must be custodied in this contract before the SME can pull them.
     InsufficientContractBalance = 165,
@@ -888,14 +889,7 @@ pub enum EscrowError {
     /// Inbound token transfer detected recipient balance delta underflow.
     InboundRecipientBalanceUnderflow = 175,
     /// Inbound token transfer detected recipient received amount differs from requested transfer.
-    InboundRecipientBalanceDeltaMismatch = 178,
-
-    /// [`LiquifactEscrow::raise_maturity_max_horizon`] received a `new_horizon` that is
-    /// not strictly greater than the current stored horizon.
-    HorizonNotRaised = 201,
-    /// [`LiquifactEscrow::extend_funding_deadline`] was called with no configured
-    /// deadline, or with a deadline that is not strictly later than the current one.
-    FundingDeadlineNotExtended = 204,
+    InboundRecipientBalanceDeltaMismatch = 263,
 
     /// [`LiquifactEscrow::fund`] blocked while operational pause is active.
     PausedBlocksFunding = 210,
@@ -969,17 +963,28 @@ pub enum EscrowError {
     /// effect, so a re-entrant or replayed call is rejected here with a dedicated, stable
     /// typed code rather than a misleading `SettlementNotFunded`.
     EscrowAlreadySettled = 236,
-
-    /// [`LiquifactEscrow::release`] attempted to release more than the remaining obligation.
-    ReleaseExceedsRemaining = 248,
-    /// [`LiquifactEscrow::release`] received a non-positive amount.
-    ReleaseAmountNotPositive = 249,
-    /// [`LiquifactEscrow::release`] blocked while a legal hold is active.
-    LegalHoldBlocksRelease = 250,
-    /// [`LiquifactEscrow::release`] blocked while operational pause is active.
-    PausedBlocksRelease = 251,
-    /// [`LiquifactEscrow::release`] called while escrow is not in funded status (`status != 1`).
-    ReleaseNotFunded = 252,
+    /// A dispute is active and blocks value release from the escrow.
+    DisputeBlocksWithdrawal = 237,
+    /// Settlement is blocked while a dispute remains active.
+    DisputeBlocksSettlement = 238,
+    /// Investor claims are blocked while a dispute remains active.
+    DisputeBlocksInvestorClaims = 239,
+    /// Partial-settlement is blocked while a dispute remains active.
+    DisputeBlocksPartialSettle = 267,
+    /// Refund processing is blocked while a dispute remains active.
+    DisputeBlocksRefund = 268,
+    /// Unfunding is blocked while a dispute remains active.
+    DisputeBlocksUnfund = 269,
+    /// Terminal dust sweep is blocked while a dispute remains active.
+    DisputeBlocksSweep = 270,
+    /// The caller is not authorized to open or close a dispute for this escrow.
+    DisputeOpenUnauthorized = 271,
+    /// The caller is not authorized to close the active dispute.
+    DisputeCloseUnauthorized = 272,
+    /// A dispute has already been opened and is still active.
+    DisputeAlreadyOpen = 273,
+    /// No dispute is active for this escrow.
+    DisputeNotOpen = 274,
 
     /// [`LiquifactEscrow::execute_callback`] called from an origin address different from the registered origin context.
     CallbackWrongOrigin = 253,
@@ -1008,44 +1013,13 @@ pub enum EscrowError {
     /// unconditional ceiling [`MAX_UNIQUE_INVESTORS`] (issue #1229) would be exceeded.
     /// This bounds the worst-case release instruction budget that scales with participant
     /// count when `max_unique_investors` was not configured at init.
-    UniqueInvestorHardCapReached = 262,
-    /// [`LiquifactEscrow::fund`] / [`LiquifactEscrow::fund_with_commitment`] /
-    /// [`LiquifactEscrow::fund_batch`] rejected an amount that cannot be represented exactly at
-    /// the configured token decimal scale.
-    FundingTokenScaleInvalid = 263,
-    /// A fund entrypoint was called but [`DataKey::FundingTokenScale`] is missing from instance
-    /// storage.
-    FundingTokenScaleNotSet = 264,
-    /// [`LiquifactEscrow::extend_funding_deadline`] rejected deadline at or after maturity.
-    FundingDeadlineBeyondMaturity = 163,
-    /// [`LiquifactEscrow::lower_min_contribution_floor`] called while escrow is not open.
-    FloorLowerNotOpen = 184,
-    /// [`LiquifactEscrow::lower_min_contribution_floor`] did not strictly lower the floor.
-    NewFloorNotLower = 185,
-    /// [`LiquifactEscrow::lower_min_contribution_floor`] received a non-positive floor.
-    NewFloorNotPositive = 186,
-    /// A legal hold blocks rotating the payer address.
-    LegalHoldBlocksPayerRotation = 181,
-    /// Payer rotation was attempted while the escrow was not in open or funded status.
-    PayerRotationNotOpen = 182,
-    /// The proposed new payer address is identical to the current payer.
-    NewPayerSameAsCurrent = 183,
-    /// Caller is not authorized to perform partial settlement.
-    PartialSettleUnauthorizedCaller = 200,
-    /// [`LiquifactEscrow::partial_settle`] blocked while a legal hold is active.
-    LegalHoldBlocksPartialSettle = 202,
-    /// [`LiquifactEscrow::partial_settle`] called while escrow is not in open status (`status != 0`).
-    PartialSettleNotOpen = 205,
-    /// [`LiquifactEscrow::raise_max_per_investor`] called with no per-investor cap configured.
-    MaxPerInvestorCapNotConfigured = 24,
-    /// [`LiquifactEscrow::raise_max_per_investor`] did not strictly raise the cap.
-    MaxPerInvestorCapNotRaised = 25,
-    /// Batch collateral entrypoint received an empty batch.
-    CollateralBatchEmpty = 64,
-    /// Batch collateral entrypoint exceeded max batch limit.
-    CollateralBatchTooLarge = 65,
-    /// Unpause scope does not match the active pause scope.
+    UniqueInvestorHardCapReached = 249,
+    /// Funding amount is not an exact multiple of the token's configured decimal scale.
+    FundingTokenScaleInvalid = 264,
+    /// Attempted to clear a pause using a scope that does not match the active pause.
     PauseScopeMismatch = 265,
+    /// No funding deadline exists to extend, or the requested deadline did not extend it.
+    FundingDeadlineNotExtended = 266,
 }
 
 #[inline(always)]
@@ -1452,14 +1426,10 @@ pub enum DataKey {
     /// reads as `false`. Written by the dispute lifecycle (admin/off-chain) and checked by
     /// [`LiquifactEscrow::close_escrow`].
     Dispute,
-    /// Monotonically increasing admin nonce counter for replay protection across admin calls.
-    AdminNonce,
-    /// Token decimals scale for the funding token.
+    /// Immutable decimal scale of the funding token, configured during initialization.
     FundingTokenScale,
-    /// Detailed typed pause state (scope, reason, timestamp, paused_by).
+    /// Stored scope and reason for the active operational pause.
     PauseState,
-    /// Total amount released so far in atomic releases.
-    ReleasedAmount,
 }
 
 // --- Data types ---
@@ -1991,6 +1961,18 @@ pub struct BeneficiaryRotated {
     pub invoice_id: Symbol,
     pub prior_sme: Address,
     pub new_sme: Address,
+}
+
+/// Emitted by [`LiquifactEscrow::rotate_payer`] when the payer
+/// address is changed, carrying both the prior and new addresses for auditing.
+#[contractevent]
+pub struct PayerRotated {
+    #[topic]
+    pub name: Symbol,
+    #[topic]
+    pub invoice_id: Symbol,
+    pub prior_payer: Address,
+    pub new_payer: Address,
 }
 
 #[contractevent]
@@ -3467,18 +3449,6 @@ impl LiquifactEscrow {
             &treasury,
             sweep_amt,
         );
-
-        TreasuryDustSwept {
-            name: symbol_short!("dust_sw"),
-            invoice_id: escrow.invoice_id.clone(),
-            recipient: treasury.clone(),
-            token: token_addr,
-            amount: sweep_amt,
-        }
-        .publish(&env);
-
-        sweep_amt
-    }
 
     /// Returns the remaining funding capacity before the funding target is reached.
     ///
@@ -5439,7 +5409,11 @@ impl LiquifactEscrow {
     ) {
         let escrow = Self::load_escrow_require_admin(&env);
         Self::consume_admin_nonce(&env, expected_nonce);
-        let was_allowlisted: bool = Self::is_investor_allowlisted(env.clone(), investor.clone());
+        let was_allowlisted: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvestorAllowlisted(investor.clone()))
+            .unwrap_or(false);
         env.storage()
             .persistent()
             .set(&DataKey::InvestorAllowlisted(investor.clone()), &allowed);
@@ -8516,6 +8490,7 @@ pub struct ReconciliationView {
 // mod test_allowlist_tests;
 
 #[cfg(test)]
+#[path = "tests/mod.rs"]
 mod tests;
 
 #[cfg(test)]

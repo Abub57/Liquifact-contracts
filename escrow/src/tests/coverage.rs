@@ -21,6 +21,15 @@ const PLEDGE: i128 = 50_000_000_000;
 
 /// Invariant: typed error codes must remain stable and unique across the escrow contract.
 #[test]
+fn errors_module_reexports_public_error_codes() {
+    let error: EscrowError = crate::errors::EscrowError::MigrationVersionMismatch;
+
+    assert_eq!(error as u32, 90);
+    assert_eq!(crate::errors::EscrowError::NoMigrationPath as u32, 92);
+    assert_eq!(crate::errors::EscrowError::FundingBatchDuplicateInvestor as u32, 84);
+}
+
+#[test]
 fn typed_error_codes_cover_init_and_state_guards() {
     let env = Env::default();
     let (client, admin, sme) = setup(&env);
