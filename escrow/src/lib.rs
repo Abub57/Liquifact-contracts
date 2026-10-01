@@ -157,7 +157,6 @@ use soroban_sdk::{
 
 pub mod external_calls;
 mod keys;
-mod storage;
 
 /// Current storage schema version written to [`DataKey::Version`] by [`LiquifactEscrow::init`].
 ///
@@ -324,6 +323,12 @@ pub const MAX_SETTLE_BATCH: u32 = 50;
 
 /// Upper bound on [`LiquifactEscrow::refund_batch`] entries to keep storage/CPU bounded.
 pub const MAX_REFUND_BATCH: u32 = 50;
+
+/// Upper bound on [`LiquifactEscrow::set_investors_allowlisted`] batch size.
+pub const MAX_INVESTOR_ALLOWLIST_BATCH: u32 = 32;
+
+/// Upper bound on [`LiquifactEscrow::set_investors_allowlisted`] batch size per call.
+pub const MAX_INVESTOR_ALLOWLIST_BATCH_PER_CALL: u32 = 32;
 
 /// Upper bound on [`LiquifactEscrow::get_contributions`] / investor read batch size.
 pub const MAX_INVESTOR_READ_BATCH: u32 = 50;
@@ -7802,6 +7807,9 @@ pub struct ReconciliationView {
 mod tests;
 
 #[cfg(test)]
+mod attestation_event_schema;
+
+#[cfg(test)]
 mod init_reentry_guard_tests {
     use super::*;
     use soroban_sdk::testutils::Address as _;
@@ -7811,6 +7819,7 @@ mod init_reentry_guard_tests {
             invoice_id: symbol_short!("inv"),
             admin: Address::generate(env),
             sme_address: Address::generate(env),
+            payer: Address::generate(env),
             amount: 1_000,
             funding_target: 1_000,
             funded_amount: 0,

@@ -148,7 +148,8 @@ mod settlement;
 mod settlement_config_view;
 mod settlement_limit;
 mod yield_tier_boundaries;
-mod admin_recovery;
+// mod admin_recovery;  // file not present in this tree
+mod attestation_event_schema;
 mod decimal_scale_tests;
 mod release_tests;
 // Hardening module for concurrent/duplicate/retry execution regressions.
