@@ -984,6 +984,16 @@ pub enum EscrowError {
     /// This bounds the worst-case release instruction budget that scales with participant
     /// count when `max_unique_investors` was not configured at init.
     UniqueInvestorHardCapReached = 249,
+    /// [`LiquifactEscrow::release`] attempted to release more than the remaining obligation.
+    ReleaseExceedsRemaining = 250,
+    /// [`LiquifactEscrow::release`] received a non-positive amount.
+    ReleaseAmountNotPositive = 251,
+    /// [`LiquifactEscrow::release`] blocked while a legal hold is active.
+    LegalHoldBlocksRelease = 252,
+    /// [`LiquifactEscrow::release`] blocked while operational pause is active.
+    PausedBlocksRelease = 253,
+    /// [`LiquifactEscrow::release`] called while escrow is not in funded status (`status != 1`).
+    ReleaseNotFunded = 254,
 }
 
 #[inline(always)]
@@ -1412,6 +1422,10 @@ pub enum DataKey {
     /// Stored cross-contract callback context ([`CallbackContext`]) keyed by invocation nonce.
     /// Binds expected origin address, invocation nonce, and lifecycle phase.
     CallbackContext(u64),
+    /// Running total of principal already released to the SME via [`LiquifactEscrow::release`].
+    /// Absent ⇒ `0`. Incremented atomically with each successful release transfer.
+    /// Used to enforce that releases do not exceed the remaining obligation.
+    ReleasedAmount,
     /// When true, the escrow has an active dispute that blocks close finalization.
     /// Absent ⇒ `false` (no dispute). **Additive key (ADR-007):** absent on legacy instances
     /// reads as `false`. Written by the dispute lifecycle (admin/off-chain) and checked by
