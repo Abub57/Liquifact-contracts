@@ -1170,7 +1170,7 @@ fn test_full_pagination_scan_no_overflow_or_duplicates() {
             break;
         }
         for i in 0..page_len {
-            let addr_str = page.get(i).unwrap().to_string();
+            let addr_str = format!("{}", page.get(i).unwrap());
             assert!(
                 collected.insert(addr_str.clone()),
                 "duplicate address {addr_str} in paginated results"
