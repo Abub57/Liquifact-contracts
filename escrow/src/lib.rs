@@ -726,7 +726,7 @@ pub enum EscrowError {
     /// [`LiquifactEscrow::propose_admin`] repeated the already-pending admin address.
     PendingAdminUnchanged = 177,
     /// [`LiquifactEscrow::update_maturity`] set maturity to the same value as current.
-    MaturityUnchanged = 81,
+    MaturityUnchanged = 250,
     /// [`LiquifactEscrow::accept_admin`] called after the proposal expiry recorded at
     /// [`DataKey::PendingAdminExpiry`]. Re-propose to nominate a fresh successor.
     AdminProposalExpired = 85,
@@ -835,7 +835,7 @@ pub enum EscrowError {
     /// Admin-nonce replay protection: the supplied nonce does not match the current expected nonce.
     /// Returned for stale (old), duplicate (same), or future (out-of-sequence) nonces.
     /// Does not leak which specific mismatch occurred to avoid giving attackers information.
-    AdminNonceMismatch = 85,
+    AdminNonceMismatch = 252,
     /// The contract's funding-token balance is less than `funded_amount` at withdraw time.
     /// Funds must be custodied in this contract before the SME can pull them.
     InsufficientContractBalance = 165,
@@ -844,8 +844,6 @@ pub enum EscrowError {
     MaturityInPast = 166,
     /// [`validate_maturity_bounds`] rejected a maturity timestamp beyond the configured horizon.
     MaturityExceedsMaxHorizon = 167,
-    /// [`LiquifactEscrow::revoke_attestation_digest`] called on a non-revoked index.
-    AttestationNotRevoked = 168,
     /// [`LiquifactEscrow::update_funding_deadline`] called while escrow is not open.
     FundingDeadlineUpdateNotOpen = 169,
     /// [`LiquifactEscrow::claim_investor_payout`] computed a zero payout.
@@ -862,7 +860,7 @@ pub enum EscrowError {
     /// Inbound token transfer detected recipient balance delta underflow.
     InboundRecipientBalanceUnderflow = 175,
     /// Inbound token transfer detected recipient received amount differs from requested transfer.
-    InboundRecipientBalanceDeltaMismatch = 176,
+    InboundRecipientBalanceDeltaMismatch = 263,
 
     /// [`LiquifactEscrow::fund`] blocked while operational pause is active.
     PausedBlocksFunding = 210,
@@ -943,21 +941,21 @@ pub enum EscrowError {
     /// Investor claims are blocked while a dispute remains active.
     DisputeBlocksInvestorClaims = 239,
     /// Partial-settlement is blocked while a dispute remains active.
-    DisputeBlocksPartialSettle = 240,
+    DisputeBlocksPartialSettle = 267,
     /// Refund processing is blocked while a dispute remains active.
-    DisputeBlocksRefund = 241,
+    DisputeBlocksRefund = 268,
     /// Unfunding is blocked while a dispute remains active.
-    DisputeBlocksUnfund = 242,
+    DisputeBlocksUnfund = 269,
     /// Terminal dust sweep is blocked while a dispute remains active.
-    DisputeBlocksSweep = 243,
+    DisputeBlocksSweep = 270,
     /// The caller is not authorized to open or close a dispute for this escrow.
-    DisputeOpenUnauthorized = 244,
+    DisputeOpenUnauthorized = 271,
     /// The caller is not authorized to close the active dispute.
-    DisputeCloseUnauthorized = 245,
+    DisputeCloseUnauthorized = 272,
     /// A dispute has already been opened and is still active.
-    DisputeAlreadyOpen = 246,
+    DisputeAlreadyOpen = 273,
     /// No dispute is active for this escrow.
-    DisputeNotOpen = 247,
+    DisputeNotOpen = 274,
 
     /// [`LiquifactEscrow::execute_callback`] called from an origin address different from the registered origin context.
     CallbackWrongOrigin = 240,
@@ -987,6 +985,12 @@ pub enum EscrowError {
     /// This bounds the worst-case release instruction budget that scales with participant
     /// count when `max_unique_investors` was not configured at init.
     UniqueInvestorHardCapReached = 249,
+    /// Funding amount is not an exact multiple of the token's configured decimal scale.
+    FundingTokenScaleInvalid = 264,
+    /// Attempted to clear a pause using a scope that does not match the active pause.
+    PauseScopeMismatch = 265,
+    /// No funding deadline exists to extend, or the requested deadline did not extend it.
+    FundingDeadlineNotExtended = 266,
 }
 
 #[inline(always)]
@@ -1420,6 +1424,10 @@ pub enum DataKey {
     /// reads as `false`. Written by the dispute lifecycle (admin/off-chain) and checked by
     /// [`LiquifactEscrow::close_escrow`].
     Dispute,
+    /// Immutable decimal scale of the funding token, configured during initialization.
+    FundingTokenScale,
+    /// Stored scope and reason for the active operational pause.
+    PauseState,
 }
 
 // --- Data types ---
@@ -2049,17 +2057,6 @@ pub struct PayerRotated {
     pub new_payer: Address,
 }
 
-/// Emitted by [`LiquifactEscrow::cancel_pending_admin`] when a pending admin
-/// handover proposal is revoked by the current admin.
-#[contractevent]
-pub struct AdminProposalCancelled {
-    #[topic]
-    pub name: Symbol,
-    #[topic]
-    pub invoice_id: Symbol,
-    pub cancelled_pending: Address,
-}
-
 #[contractevent]
 pub struct BenChange {
     #[topic]
@@ -2591,28 +2588,6 @@ pub struct ContractUpgraded {
     #[topic]
     pub invoice_id: Symbol,
     pub new_wasm_hash: BytesN<32>,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CollateralPledge {
-    pub invoice_id: Symbol,
-    pub amount: i128,
-}
-
-// ---------------------------------------------------------------------------
-// Events
-// ---------------------------------------------------------------------------
-
-/// Emitted by clear_sme_collateral_commitment when a pledge is retired.
-///
-/// `amount` carries the value from the removed pledge record.
-#[contractevent(topics = ["collateral_cleared"])]
-pub struct CollateralClearedEvt {
-    #[topic]
-    pub invoice_id: Symbol,
-    /// The amount that was recorded in the retired pledge.
-    pub amount: i128,
 }
 
 // ---------------------------------------------------------------------------
@@ -3549,37 +3524,6 @@ impl LiquifactEscrow {
         escrow.status = 2;
         env.storage().instance().set(&DataKey::Escrow, &escrow);
         sweep_amt
-    }
-
-    /// Retire a previously recorded collateral pledge.
-    ///
-    /// Metadata-only: no tokens are moved. Requires SME auth.
-    ///
-    /// Guard ordering (ADR-002):
-    /// 1. Read-only existence check ΓÇö returns [`EscrowError::NoCollateralToClear`] if absent.
-    /// 2. `require_auth` on the SME address.
-    /// 3. Remove storage entry and emit [`CollateralClearedEvt`].
-    pub fn clear_sme_collateral_commitment(env: Env) -> Result<(), EscrowError> {
-        // 1. Read-only existence check (no auth yet).
-        let pledge: CollateralPledge = env
-            .storage()
-            .instance()
-            .get(&DataKey::SmeCollateralPledge)
-            .ok_or(EscrowError::NoCollateralToClear)?;
-
-        // 2. Load escrow and require SME auth.
-        let escrow = load_escrow_require_sme(&env)?;
-
-        // 3. Remove entry and emit retirement event.
-        env.storage()
-            .instance()
-            .remove(&DataKey::SmeCollateralPledge);
-        CollateralClearedEvt {
-            invoice_id: escrow.invoice_id,
-            amount: pledge.amount,
-        }
-        .publish(&env);
-        Ok(())
     }
 
     /// Returns the remaining funding capacity before the funding target is reached.
@@ -5701,6 +5645,11 @@ impl LiquifactEscrow {
     ) {
         let escrow = Self::load_escrow_require_admin(&env);
         Self::consume_admin_nonce(&env, expected_nonce);
+        let was_allowlisted: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::InvestorAllowlisted(investor.clone()))
+            .unwrap_or(false);
         env.storage()
             .persistent()
             .set(&DataKey::InvestorAllowlisted(investor.clone()), &allowed);
