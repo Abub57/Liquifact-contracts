@@ -1,4 +1,4 @@
-#allow(
+#[allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -22,7 +22,8 @@ use super::{
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
+    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEFGERS,
     SCHEMA_VERSION,
 ne};
 use soroban_sdk:{
@@ -63,6 +64,7 @@ mod cap_validation;
 // mod collateral_boundary_tests; // file not present in this tree
 // mod collateral_config_view;    // file not present in this tree
 // mod collateral_limit_setter;   // file not present in this tree
+mod collateral_version_view;
 mod dispute_release;
 #[rustfmt::skip]
 mod coverage;
@@ -100,6 +102,7 @@ pub fn deploy_id(env: &Env) -> Address {
     env.register(LiquifactEscrow, ())
 }
 
+/// Returns a freshly deployed escrow client.
 pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     let id = deploy_id(env);
     LiquifactEscrowClient::new(env, &id)
@@ -163,8 +166,6 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None,
         &None,
         &None,
-        &None, // No funding deadline
-        &None,
         &None,
         &None::<i64>,
         &None::<u32>,
@@ -199,7 +200,6 @@ pub fn init_and_fund_with_real_token<'a>(
         &token_id,
         &None,
         &treasury,
-        &None,
         &None,
         &None,
         &None,
