@@ -2069,7 +2069,7 @@ fn test_is_settleable_legal_hold_active() {
     let (client, admin, sme) = setup(&env);
     default_init(&client, &env, &admin, &sme);
     fund_to_target(&client, &env);
-    client.set_legal_hold(&true);
+    client.set_legal_hold(&true, &0u32);
     assert!(
         !client.is_settleable(),
         "legal hold active is not settleable"
@@ -2147,7 +2147,7 @@ fn test_settlement_readiness_funded_but_held_blocks_ready() {
     default_init(&client, &env, &admin, &sme);
     fund_to_target(&client, &env);
 
-    client.set_legal_hold(&true);
+    client.set_legal_hold(&true, &0u32);
 
     let r = client.get_settlement_readiness();
     assert!(r.legal_hold_active);
@@ -2290,7 +2290,7 @@ fn test_readiness_fields_funded_no_lock_with_hold() {
     let (client, admin, sme) = setup(&env);
     default_init(&client, &env, &admin, &sme);
     fund_to_target(&client, &env);
-    client.set_legal_hold(&true);
+    client.set_legal_hold(&true, &0u32);
     assert_readiness_matches_predicates(&env, &client);
 }
 
@@ -2407,7 +2407,7 @@ fn test_readiness_fields_after_maturity_with_hold() {
     token.stellar.mint(&investor, &TARGET);
     client.fund(&investor, &TARGET);
     env.ledger().set_timestamp(maturity + 100);
-    client.set_legal_hold(&true);
+    client.set_legal_hold(&true, &0u32);
     assert_readiness_matches_predicates(&env, &client);
 }
 
@@ -3234,6 +3234,7 @@ fn settlement_config_reflects_protocol_fee() {
         &None,
         &None,
         &Some(fee_bps),
+        &None::<u32>,
     );
 
     let config = client.get_settlement_config();
@@ -3584,7 +3585,7 @@ fn update_yield_bps_fails_when_cancelled() {
     let env = Env::default();
     let (client, _admin) = setup_yield_bps_test(&env, "YLD_ST_03", 800);
 
-    client.cancel_funding();
+    client.cancel_funding(&0u32);
     assert_eq!(client.get_escrow().status, 4u32);
 
     assert_contract_error(

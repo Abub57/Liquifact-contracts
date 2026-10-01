@@ -420,3 +420,5 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
     );
     emit_transfer_event(env, TransferDirection::Inbound, nonce, amount);
 }
+
+pub use transfer_funding_token_inbound_with_balance_checks as transfer_into_escrow_with_balance_checks;

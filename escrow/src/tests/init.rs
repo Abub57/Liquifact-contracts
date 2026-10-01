@@ -282,7 +282,7 @@ fn test_reinit_during_another_call_rejected() {
     // Touch a distinct config field (maturity-max-horizon) so the escrow is in
     // a non-fresh, initialized state; directly setting maturity to its current
     // value (0) would trip `MaturityUnchanged`.
-    client.update_maturity_max_horizon(&100u64);
+    client.update_maturity_max_horizon(&100u64, &0u32);
     let escrow = client.get_escrow();
     let token = client.get_funding_token();
     let treasury = client.get_treasury();
@@ -1729,7 +1729,7 @@ fn test_update_maturity_beyond_horizon_rejected() {
         &None::<i64>,
     );
     assert_contract_error(
-        client.try_update_maturity(&(1000u64 + DEFAULT_MATURITY_MAX_HORIZON_SECS + 1)),
+        client.try_update_maturity(&(1000u64 + DEFAULT_MATURITY_MAX_HORIZON_SECS + 1), &0u32),
         EscrowError::MaturityExceedsMaxHorizon,
     );
 }
@@ -1761,7 +1761,7 @@ fn test_update_maturity_in_past_rejected() {
         &None::<i64>,
     );
     assert_contract_error(
-        client.try_update_maturity(&1000u64),
+        client.try_update_maturity(&1000u64, &0u32),
         EscrowError::MaturityInPast,
     );
 }
