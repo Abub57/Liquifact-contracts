@@ -1,4 +1,5 @@
-# Collateral Validation Boundaries
+
+# Collateral Invariants
 
 This document enumerates the invariants that must always hold for the **SME collateral commitment** metadata in the LiquiFact escrow contract.
 
@@ -24,6 +25,10 @@ The storage key `DataKey::SmeCollateralPledge` and the event symbol `CollateralR
 
 ---
 
+## State Model
+
+The collateral subsystem owns exactly one piece of instance storage: `DataKey::SmeCollateralPledge`, which holds an optional `SmeCollateralPledge { amount, asset, recorded_at }`. The pledge is either **absent** (`None`) or **present** (`Some`). All transitions are performed by `record_sme_collateral_commitment` (absent→present, present→present) and `clear_sme_collateral_commitment` (present→absent). No other entry point may read or write this key, so the stored value is the single source of truth for the collateral state.
+
 ## Invariants
 
 | # | Invariant | Description | Enforced By |
@@ -38,7 +43,16 @@ The storage key `DataKey::SmeCollateralPledge` and the event symbol `CollateralR
 
 ---
 
-## Boundary Cases
+## State-Transition & Authorization Invariants
+
+The following invariants are owned by this subsystem and must be preserved by any change to the entry points above:
+
+- **Authorization**: `record_sme_collateral_commitment` and `clear_sme_collateral_commitment` require the caller to be the SME authorized for the escrow. Unauthorized callers must fail with the existing auth error before any storage write, so a rejected call cannot mutate the pledge.
+- **Atomicity**: Each entry point performs at most one storage write and one event emission. A failed validation (invariants 1–3, 5) must leave the previously stored pledge unchanged; there is no partial update.
+- **Determinism**: For identical inputs and identical prior state, the resulting state and emitted event are identical. No randomness, time-of-call dependence, or external reads are used beyond the caller-supplied `recorded_at`.
+- **Idempotence of reads**: `get_sme_collateral_commitment` is a pure read; it never mutates state and always returns the current pledge or `None`.
+- **Replay resistance**: Because `recorded_at` must be monotonic (invariant 3), replaying an older record call is rejected rather than silently downgrading the stored pledge.
+- **Concurrency**: Soroban executes contract entry points serially per ledger, so no interleaving can occur between the validation and the storage write within a single call. Retries of a rejected call are safe because they fail validation before writing.
 
 ## Enforcement Locations
 
@@ -63,6 +77,8 @@ The storage key `DataKey::SmeCollateralPledge` and the event symbol `CollateralR
 ---
 
 ## Failure Modes & Observability
+
+All rejections surface as typed `EscrowError` variants (`CollateralAmountNotPositive`, `CollateralAssetEmpty`, `CollateralTimestampBackwards`, `NoCollateralToClear`) and abort the call without writing storage, so callers and indexers can distinguish validation failures from success. Successful transitions emit `CollateralRecordedEvt` (with prior and new amounts) or `CollateralClearedEvt`; these events are the primary observability signal for off-chain indexers. No sensitive data is included in errors or events beyond the amounts and asset symbol already supplied by the caller.
 
 ## Security & Design Notes
 

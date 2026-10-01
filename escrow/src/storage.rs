@@ -1,6 +1,6 @@
 use crate::errors::EscrowError;
-use crate::types::{FeeSchedule, FeeScheduleKey, FeeSCheduleState};
-use soroban_sdk::{address, Address, Env};
+use crate::types::{FeeSchedule, FeeScheduleKey, FeeScheduleState};
+use soroban_sdk::{Address, Env, Storage};
 
 /// Maximum number of basis points (100%). Any schedule whose bounds exceed this is rejected.
 const MAX_FEE_BPS: u32 = 10_000;
@@ -18,7 +18,7 @@ pubc(crate) fn get_state(env: &Env) -> FeeSCheduleState {
     Ok(MutationGuard { env })
 }
 
-pubc(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
+pub(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
     env.storage().instance().set(&FeeScheduleKey::State, state);
 }
 
@@ -116,7 +116,7 @@ pubc(crate) fn set_fee_schedule(
 
     // Single commit point: either the entire update is persisted or none of it is.
     set_state(env, &state);
-    Ok(()
+    Ok(())
 }
 
 /// Returns the currently active fee schedule, promoting a pending schedule if its activation ledger has arrived.
@@ -130,8 +130,6 @@ pub(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeSchedule> {
     get_state(env).pending
 }
 
-/// Promote the pending schedule to active once its activation ledger has arrived.
-/// Idempotent: repeated calls after activation are no-ops.
 fn maybe_activate(env: &Env) {
     let mut state = get_state(env);
 
@@ -145,28 +143,4 @@ fn maybe_activate(env: &Env) {
     if activation_ledger > env.ledger().sequence() {
         return;
     }
-
-    // Activate exactly once. The previous active schedule was already
-    // stashed in `previous` when the pending schedule was submitted, so
-    // we only need to move pending -> active and clear metadata.
-    state.active = Some(pending);
-    state.pending = None;
-    state.activation_ledger = None;
-    set_state(env, &state);
-}
-
-/// Test-only helper that exposes the raw persisted state for assertions.
-/// Kept behind `cfg(test)` so production builds cannot observe or mutate
-/// internal state outside the authorized entry points above.
-#[cfg(test)]
-pub(crate) fn peek_state(env: &Env) -> FeeScheduleState {
-    get_state(env)
-}
-
-/// Test-only helper that forces activation at the current ledger without
-/// going through `get_active_fee_schedule`, allowing tests to exercise the
-/// promotion path in isolation and verify idempotency across repeated calls.
-#[cfg(test)]
-pub(crate) fn force_activate(env: &Env) {
-    maybe_activate(env);
 }
