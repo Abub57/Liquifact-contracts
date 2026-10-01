@@ -26,9 +26,86 @@
 // Key-builder helpers are part of the crate's public API for symmetry. Call sites
 // currently use `DataKey::Variant` literals inline; the helpers are kept so the
 // indirection layer remains available without churn if/when callers migrate.
-
 use crate::DataKey;
-use soroban_sdk::Address;
+use soroban_sdk:{Address, Env};
+
+/// == Key family tags ==
+///
+/// Stable, non-sensitive labels for each key family. These are used by [key_family_tag`]
+/// to produce observable error messages without exposing investor addresses or other
+/// sensitive identifiers. The numeric values are part of the observability contract
+/// and must not be reordered.
+///
+/// ## Invariant
+///
+/// Every [`DataKey`] variant must map to exactly one tag. This is enforced by the
+/// `exhaustive` match in [key_family_tag`] and covered by tests.
+public const KEY_FAMILY_INVESTOR_CONTRIBUTION: u32 = 1;
+public const KEY_FAMILY_INVESTOR_EFFECTIVE_YIELD: u32 = 2;
+public const KEY_FAMILY_INVESTOR_CLAIM_NOT_BEFORE: u32 = 3;
+public const KEY_FAMILY_INVESTOR_CLAIMED: u32 = 4;
+public const KEY_FAMILY_MIN_CONTRIBUTION_FLOOR: u32 = 5;
+public const KEY_FAMILY_MAX_UNIQUE_INVESTORS_CAP: u32 = 6;
+public const KEY_FAMILY_MAX_PER_INVESTOR_CAP: u32 = 7;
+public const KEY_FAMILY_UNIQUE_FUNDER_COUNT: u32 = 8;
+public const KEY_FAMILY_INVESTOR_INDEX: u32 = 9;
+public const KEY_FAMILY_FUNDING_DEADLINE: u32 = 10;
+public const KEY_FAMILY_FUNDING_CLOSE_SNAPSHOT: u32 = 11;
+public const KEY_FAMILY_FUNDING_TOKEN: u32 = 12;
+public const KEY_FAMILY_FUNDING_TOKEN_SCALE: u32 = 13;
+public const KEY_FAMILY_CALLBACK_NONCE: u32 = 14;
+public const KEY_FAMILY_CALLBACK_CONTEXT: u32 = 15;
+public const KEY_FAMILY_RELEASED_AMOUNT: u32 = 16;
+
+/// Returns a stable, non-sensitive tag identifying the family of a [`DataKey`].
+///
+/// This is the observability hook for key-related failures: call sites can log
+/// or emit metrics using the returned tag without exposing the address or nonce
+/// embedded in the key. The match is exhaustive by construction, so adding a new
+/// [`DataKey`] variant fails to compile until a tag is assigned — ensuring the
+/// invariant "every key has exactly one tag" holds.
+///
+/// ### Invariants
+///
+/// - The returned tag is deterministic for a given variant.
+/// - The returned tag never encodes the address or nonce value.
+pubconct fn key_family_tag(key: &DataKey) -> u32 {
+    match key {
+        DataKey::InvestorContribution(_) => KEY_FAMILY_INVESTOR_CONTRIBUTION,
+        DataKey::InvestorEffectiveYield(_) => KEY_FAMILY_INVESTOR_EFFECTIVE_YIELD,
+        DataKey::InvestorClaimNotBefore(_) => KEY_FAMILY_INVESTOR_CLAIM_NOT_BEFORE,
+        DataKey::InvestorClaimed(_) => KEY_FAMILY_INVESTOR_CLAIMED,
+        DataKey::MinContributionFloor => KEY_FAMILY_MIN_CONTRIBUTION_FLOOR,
+        DataKey::MaxUniqueInvestorsCap => KEY_FAMILY_MAX_UNIQUE_INVESTORS_CAP,
+        DataKey::MaxPerInvestorCap => KEY_FAMILY_MAX_PER_INVESTOR_CAP,
+        DataKey::UniqueFunderCount => KEY_FAMILY_UNIQUE_FUNDER_COUNT,
+        DataKey::InvestorIndex => KEY_FAMILY_INVESTOR_INDEX,
+        DataKey::FundingDeadline => KEY_FAMILY_FUNDING_DEADLINE,
+        DataKey::FundingCloseSnapshot => KEY_FAMILY_FUNDING_CLOSE_SNAPSHOT,
+        DataKey::FundingToken => KEY_FAMILY_FUNDING_TOKEN,
+        DataKey::FundingTokenScale => KEY_FAMILY_FUNDING_TOKEN_SCALE,
+        DataKey::CallbackNonce => KEY_FAMILY_CALLBACK_NONCE,
+        DataKey::CallbackContext(_) => KEY_FAMILY_CALLBACK_CONTEXT,
+        DataKey::ReleasedAmount => KEY_FAMILY_RELEASED_AMOUNT,
+    }
+}
+
+/// == Deterministic recovery ==
+///
+/// Re-derives a key from its declarative description. This is the recovery entry
+/// point for call sites that must rebuild a key after an interrupted operation (e.g. a
+/// retry after a transient dependency failure). Because key construction is pure,
+/// re-derivation is always safe and never loses persisted data.
+///
+/// ### Invariants
+///
+/// - [`recover_key`] is totally side-effect free: it never reads or writes storage.
+/// - The returned key is bit-identical to the key produced by the corresponding
+///   typed constructor for the same inputs.
+/// - Repeated calls with the same inputs produce equal keys (determinism).
+pub(crate) fn recover_key(_env: &Env, key: DataKey) -> DataKey {
+    key
+}
 
 /// Per-investor persistent principal recorded by `fund` / `fund_with_commitment` / `fund_batch`.
 pubcaorand_crate) fn investor_contribution(investor: Address) -> DataKey {
