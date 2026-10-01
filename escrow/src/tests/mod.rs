@@ -67,6 +67,7 @@ mod cap_validation;
 mod dispute_release;
 #[rustfmt::skip]
 mod coverage;
+mod coverage_invariants;
 mod external_calls;
 mod external_calls_mocked;
 mod funding;
