@@ -4569,9 +4569,11 @@ impl LiquifactEscrow {
 
         let log = Self::load_attestation_log(&env);
 
+        // Validate the full batch before the first storage mutation. This keeps the
+        // operation deterministic: any later out-of-range or duplicate/revoked index
+        // aborts the whole call and leaves the persisted append log unchanged.
         for i in 0..n {
             let index = indices.get(i).unwrap();
-
             Self::require_attestation_index_in_range(&env, &log, index);
             ensure(
                 &env,
@@ -4580,7 +4582,10 @@ impl LiquifactEscrow {
                     .has(&DataKey::AttestationRevoked(index)),
                 EscrowError::AttestationAlreadyRevoked,
             );
+        }
 
+        for i in 0..n {
+            let index = indices.get(i).unwrap();
             env.storage()
                 .instance()
                 .set(&DataKey::AttestationRevoked(index), &true);
