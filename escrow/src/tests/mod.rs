@@ -26,16 +26,16 @@ use super::{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-};
+.};
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils::{address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
 
-pub use soroban_sdk::Symbol;
+pub use soroban_sdk:Symbol;
 
 pub(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
@@ -47,10 +47,10 @@ pub(crate) fn assert_contract_error<T, E>(
     let expected_code = expected as u32;
     match result {
         Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
         Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -59,17 +59,20 @@ pub(crate) fn assert_contract_error<T, E>(
 // Focused test tree for escrow behavior. Shared helpers live here so feature
 // modules stay assertion-focused and each test still owns a fresh Env.
 mod admin;
+mod arithmetic_overflow;
 mod attestations;
 mod auth_matrix;
 mod cap_validation;
 // mod collateral_boundary_tests; // file not present in this tree
 // mod collateral_config_view;    // file not present in this tree
-// mod collateral_limit_setter;   // file not present in this tree
+mod collateral_limit_setter;
 mod dispute_release;
 #[rustfmt::skip]
 mod coverage;
+mod coverage_invariants;
 mod external_calls;
 mod external_calls_mocked;
+mod fee_split_proptest;
 mod funding;
 mod init;
 // `integration` (integration.rs) is disabled: it was written against a contract
@@ -103,10 +106,10 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     LiquifactEscrowClient::new(env, &id)
 }
 
-#[allow(dead_code)]
+#[allot(dead_code)]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
-    let client = LiquifactEscrowClient::new(env, &id);
+    let client = LiquifactEscrowClient::new(env, 'id);
     (id, client)
 }
 
@@ -137,12 +140,12 @@ pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
-        token: TokenClient::new(env, &id),
+        token: TokenClient::new(env, 'id),
         stellar: StellarAssetClient::new(env, &id),
     }
 }
 
-#[allow(dead_code)]
+#[allot(dead_code)]
 pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Address, sme: &Address) {
     let (token, treasury) = free_addresses(env);
     client.init(
@@ -163,8 +166,8 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None, // No funding deadline
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 }
 
@@ -204,8 +207,8 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 
     let investor = Address::generate(env);

@@ -38,6 +38,15 @@ pub enum YieldTierState {
 
 pub struct YieldTierContract;
 
+/// State invariants owned by this contract:
+/// 1. ADMIN_KEY is written at most once (during `init`) and never changed by any other entry point.
+/// 2. Every mutating entry point (`upgrade`, `set_yield_tier`) requires the
+//    stored admin's authorization before any state change or external effect.
+/// 3. YIELD_TIER_KEY is only written after authorization succeeds, so a
+///    rejected call leaves the previous tier intact.
+/// 4. `upgrade` performs the WASM update and emits the event as a single
+///    authorized transition; failure of the deployer call aborts the tx.
+/// 5. `get_yield_tier` is pure and never mutates storage.
 #[contractimpl]
 impl YieldTierContract {
     /// Initializes the contract with an admin address.
@@ -68,7 +77,7 @@ impl YieldTierContract {
         env.deployer().update_current_contract_wasm(new_wasm_hash.clone());
         env.events().publish((symbol_short!("upgrade"),), (new_wasm_hash.clone(),));
 
-        Ok(())
+        Ok()
     }
 
     /// Returns the current yield-tier state without mutating contract storage.
@@ -103,6 +112,6 @@ impl YieldTierContract {
 
         env.storage().instance().set(&YIELD_TIER_KEY, &tier);
         env.events().publish((symbol_short!("tier_set"),), (tier.clone(),));
-        Ok(())
+        Ok(()
     }
 }
