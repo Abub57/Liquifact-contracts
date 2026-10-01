@@ -39,7 +39,7 @@ fn init_client(
 fn test_migration_version_mismatch() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
+    let (contract_id, client) = deploy_with_id(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
     init_client(&env, &client, &admin, &sme, "MIGSMK1");
@@ -48,13 +48,17 @@ fn test_migration_version_mismatch() {
         client.try_migrate(&(SCHEMA_VERSION - 1), &0u32),
         EscrowError::MigrationVersionMismatch,
     );
+
+    // Recovery invariant: the rejected migration must not have advanced or
+    // otherwise mutated the stored version, so a corrected retry is safe.
+    assert_version_unchanged(&env, &client.address, SCHEMA_VERSION);
 }
 
 #[test]
 fn test_already_current_schema_version() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
+    let (contract_id, client) = deploy_with_id(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
     init_client(&env, &client, &admin, &sme, "MIGSMK2");
@@ -62,6 +66,14 @@ fn test_already_current_schema_version() {
         client.try_migrate(&SCHEMA_VERSION, &0u32),
         EscrowError::AlreadyCurrentSchemaVersion,
     );
+
+    // Idempotent rejection: retrying the same call yields the same error and
+    // leaves the version untouched.
+    assert_contract_error(
+        client.try_migrate(&SCHEMA_VERSION, &0u32),
+        EscrowError::AlreadyCurrentSchemaVersion,
+    );
+    assert_version_unchanged(&env, &client.address, SCHEMA_VERSION);
 }
 
 #[test]
