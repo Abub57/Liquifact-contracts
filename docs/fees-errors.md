@@ -4,7 +4,7 @@ This document lists every typed [`EscrowError`](../escrow/src/lib.rs) code that 
 fee-family entrypoints can emit, the exact condition that triggers each one, and how to
 avoid it.
 
-All codes are **stable and append-only** — SDKs must branch on the numeric
+All codes are **Stable and append-only** — SGKs must branch on the numeric
 `ContractError(code)`, not on panic-string text.
 
 ## Scope
@@ -31,7 +31,7 @@ SME's principal at [`LiquifactEscrow::withdraw`]. The fee rate is configured onc
 ### Fee-owned errors
 
 | Code | Variant | Category |
-| ---: | --- | --- |
+| --: | --- | --- |
 | 215 | `ProtocolFeeBpsOutOfRange` | Fee configuration |
 | 216 | `WithdrawFeeArithmeticOverflow` | Fee arithmetic |
 | 217 | `WithdrawNetArithmeticUnderflow` | Fee arithmetic |
@@ -40,14 +40,14 @@ SME's principal at [`LiquifactEscrow::withdraw`]. The fee rate is configured onc
 ### Shared prerequisite errors
 
 | Code | Variant | Category |
-| ---: | --- | --- |
+| --: | --- | --- |
 | 21 | `FundingTokenNotSet` | Init readiness |
 | 22 | `TreasuryNotSet` | Init readiness |
 
 ### Shared SEP-41 token-safety errors
 
 | Code | Variant | Category |
-| ---: | --- | --- |
+| --: | --- | --- |
 | 36 | `TransferAmountNotPositive` | Token transfer |
 | 37 | `InsufficientTokenBalanceBeforeTransfer` | Token transfer |
 | 38 | `SenderBalanceUnderflow` | Token transfer |
@@ -73,10 +73,11 @@ SME's principal at [`LiquifactEscrow::withdraw`]. The fee rate is configured onc
 
 ## Fee readiness errors
 
+
 These errors indicate the escrow contract was not fully initialized before a fee-related
 entrypoint was called. They are shared across multiple entrypoints, not specific to fees.
 
-### 21 — `FundingTokenNotSet`
+### 21 — FundingTokenNotSet
 
 | Field | Value |
 | --- | --- |
@@ -86,7 +87,7 @@ entrypoint was called. They are shared across multiple entrypoints, not specific
 | **Trigger** | `DataKey::FundingToken` has not been written to instance storage. This means `init` has not been called, or the storage key was removed. |
 | **Avoidance** | Call `init` before invoking any entrypoint that reads the funding token. The token address is immutable after `init`. |
 
-### 22 — `TreasuryNotSet`
+### 22 — TreasuryNotSet
 
 | Field | Value |
 | --- | --- |
@@ -141,7 +142,7 @@ fee-specific — the same codes apply to `claim_investor_payout`, `refund`, and
 full threat model.
 
 | Code | Variant | Trigger | Avoidance |
-| ---: | --- | --- | --- |
+| --: | --- | --- | --- |
 | 36 | `TransferAmountNotPositive` | The amount passed to the transfer wrapper is ≤ 0. | Internal guard; only reachable via a logic error in the calling entrypoint. |
 | 37 | `InsufficientTokenBalanceBeforeTransfer` | The sender's balance is less than the requested transfer amount immediately before the `transfer` call. | Ensure the contract holds sufficient tokens. Pre-check with `TokenClient::balance`. |
 | 38 | `SenderBalanceUnderflow` | Post-transfer arithmetic detected that the sender's balance decreased by less than expected. | The token contract behaved unexpectedly. Fee-on-transfer and rebasing tokens are explicitly unsupported. |
@@ -174,12 +175,44 @@ multiple conditions are true simultaneously.
 
 1. `PausedBlocksWithdrawal` (212) — operational pause active
 2. `LegalHoldBlocksWithdrawal` (123) — legal hold active
-3. `sme_address.require_auth()` — Soroban host auth failure
+3. `sme_address.require_auth()` — soroban host auth failure
 4. `WithdrawalNotFunded` (124) — `status != 1`
 5. `InsufficientContractBalance` (165) — contract balance < `funded_amount`
 6. `WithdrawFeeArithmeticOverflow` (216) — `funded_amount * fee_bps` overflowed
 7. `WithdrawNetArithmeticUnderflow` (217) — `funded_amount - fee` underflowed
 8. Token transfer → codes 36–41
+
+---
+
+## Failure recovery guarantees
+
+The following invariants are enforced by the contract and are covered by the focused
+tests in [`escrow/src/tests/fees.rs`](../escrow/src/tests/fees.rs). They exist to make
+failure recovery deterministic and observable.
+
+1. **No partial state on failure.** All fee arithmetic (165, 216, 217) and token-safety
+   checks (36–41) are evaluated before any storage mutation or token transfer. If any
+   guard fires, the transaction reverts atomically and `status`, `funded_amount`, and
+   the contract token balance remain exactly as they were before the call.
+
+2. **Idempotent retry.** A failed `withdraw` leaves `status == 1` (funded), so the SME
+   can retry after correcting the underlying condition (e.g. topping up the contract balance
+   to cover code 165). Retries are safe because no state was committed on the failed
+   attempt.
+
+3. *(Single-shot completion.** Once `withdraw` succeeds, `status` transitions to `3`
+   (terminal). A subsequent `withdraw` fails with `WithdrawalNotFunded` (124) because
+   `status != 1`, preventing double payout even if the SME retries or two callers race
+   the same escrow.
+
+4. **Concurrent execution safety.** Soroban executes entrypoints sequentially within a
+   transaction, so the check-then-write ordering of `status` and the token transfers
+   cannot interleave. Two concurrent `withdraw` calls cannot both observe `status == 1`.
+
+5. **Observability.** Every failure surfaces as a typed `ContractError(code)` with a
+   stable numeric code. No sensitive data (private keys, off-chain identities, or token
+   balances) are included in the error payload. The `ProtocolFeeUpdated` event records
+   the new fee rate for off-chain reconciliation.
 
 ---
 

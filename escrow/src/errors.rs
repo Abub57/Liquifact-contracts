@@ -54,6 +54,7 @@ pub enum EscrowError {
     FundingBatchExceedsLimit = 81,
     FundingBatchInvalidAmount = 82,
     FundingBatchDuplicateInvestor = 84,
+    FundingBatchDuplicateInvestor = 84,
 
     ClaimBatchEmpty = 85,
     ClaimBatchExceedsLimit = 86,
