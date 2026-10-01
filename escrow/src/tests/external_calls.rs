@@ -105,9 +105,12 @@ fn test_muxed_address_compatibility() {
     let amount = 500i128;
     token.stellar.mint(&holder, &amount);
 
-    // Verify that MuxedAddress conversion works correctly
-    let muxed_treasury = MuxedAddress::from(treasury.clone());
-    assert_eq!(muxed_treasury.address(), treasury);
+    // Verify that MuxedAddress conversion works correctly.
+    // `MuxedAddress` is constructed from an `Address` via `From`/`Into`; the
+    // resulting value must round-trip back to the original address so that
+    // callers relying on the compatibility contract observe no change.
+    let muxed_treasury: MuxedAddress = treasury.clone().into();
+    assert_eq!(Address::from(muxed_treasury.clone()), treasury);
 
     // Transfer should work with MuxedAddress internally
     transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
@@ -199,6 +202,92 @@ fn test_edge_case_maximum_amount_transfer() {
     assert_eq!(treasury_after, large_amount);
 }
 
+// ── Deterministic failure recovery for transfer_funding_token_with_balance_checks ──
+//
+// Invariant: when a transfer fails (insufficient balance, zero/negative amount),
+// no state is mutated and the operation is safely retryable. A subsequent valid
+// transfer must succeed and produce exact balance deltas, proving recovery is
+// deterministic and does not leak partial state.
+
+#[test]
+fn failed_transfer_leaves_state_unchanged_and_is_retryable() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    // Holder has 100, attempt to transfer 500 → must fail without mutation.
+    token.stellar.mint(&holder, &100i128);
+    let holder_before = token.token.balance(&holder);
+    let treasury_before = token.token.balance(&treasury);
+    assert_eq!(holder_before, 100i128);
+    assert_eq!(treasury_before, 0i128);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 500i128);
+    }));
+    assert!(result.is_err(), "over-balance transfer must fail");
+
+    // State must be unchanged after the failed attempt.
+    assert_eq!(token.token.balance(&holder), holder_before);
+    assert_eq!(token.token.balance(&treasury), treasury_before);
+
+    // Retry with a valid amount must succeed deterministically.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 100i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 100i128);
+}
+
+#[test]
+fn zero_amount_failure_is_retryable_with_valid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &250i128);
+
+    // Zero-amount attempt must fail without mutating balances.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0i128);
+    }));
+    assert!(result.is_err(), "zero-amount transfer must fail");
+    assert_eq!(token.token.balance(&holder), 250i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    // Recovery: a valid transfer succeeds and preserves exact deltas.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 250i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 250i128);
+}
+
+#[test]
+fn negative_amount_failure_is_retryable_with_valid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &75i128);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, -1i128);
+    }));
+    assert!(result.is_err(), "negative-amount transfer must fail");
+    assert_eq!(token.token.balance(&holder), 75i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 75i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 75i128);
+}
+
 // ── Liability floor tests for sweep_terminal_dust ────────────────────────────
 
 fn setup_cancelled_with_token<'a>(
@@ -230,12 +319,11 @@ fn setup_cancelled_with_token<'a>(
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     // Mint to investor so fund() can transfer principal into escrow
     token.stellar.mint(investor, &fund_amount);
     client.fund(investor, &fund_amount);
-    client.cancel_funding(&0u32);
+    client.cancel_funding();
     (token, treasury)
 }
 
@@ -314,14 +402,13 @@ fn sweep_liability_floor_allows_sweep_of_excess_above_outstanding() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     // Mint 1001 into contract: 500 for A, 500 for B, 1 dust
     token.stellar.mint(&investor_a, &1_001i128);
     client.fund(&investor_a, &500i128);
     client.fund(&investor_b, &500i128);
-    client.cancel_funding(&0u32);
+    client.cancel_funding();
 
     // Refund investor_a → distributed = 500, outstanding = 500
     client.refund(&investor_a);
@@ -365,13 +452,12 @@ fn sweep_liability_floor_blocks_sweep_that_would_eat_into_outstanding() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     token.stellar.mint(&investor_a, &1_001i128);
     client.fund(&investor_a, &500i128);
     client.fund(&investor_b, &500i128);
-    client.cancel_funding(&0u32);
+    client.cancel_funding();
     client.refund(&investor_a);
 
     // balance = 501, outstanding = 500; sweep of 2 → 501 - 2 = 499 < 500 ✗
@@ -407,9 +493,8 @@ fn sweep_liability_floor_zero_funded_amount_allows_sweep() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
-    client.cancel_funding(&0u32);
+    client.cancel_funding();
 
     // Stray airdrop of 50 tokens
     token.stellar.mint(&client.address, &50i128);
@@ -451,14 +536,13 @@ fn distributed_principal_accumulates_across_multiple_refunds() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     token.stellar.mint(&inv_a, &900i128);
     client.fund(&inv_a, &300i128);
     client.fund(&inv_b, &300i128);
     client.fund(&inv_c, &300i128);
-    client.cancel_funding(&0u32);
+    client.cancel_funding();
 
     assert_eq!(client.get_distributed_principal(), 0i128);
 
@@ -511,7 +595,6 @@ fn setup_multi_investor_cancelled<'a>(
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     for i in 0..investors.len() {
         token.stellar.mint(&investors[i], &amounts[i]);
@@ -652,7 +735,6 @@ fn sweep_liability_floor_terminal_status_guard() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     client.sweep_terminal_dust(&1i128);
 }
@@ -751,7 +833,6 @@ fn reconciliation_surplus_equals_sweepable_dust_before_and_after_partial_refund(
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     token.stellar.mint(&investor_a, &1_001i128);
     client.fund(&investor_a, &500i128);
@@ -854,7 +935,6 @@ fn reconciliation_zero_balance_and_zero_liability() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     let view = client.get_reconciliation();
