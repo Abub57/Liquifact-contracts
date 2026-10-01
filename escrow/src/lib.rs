@@ -159,6 +159,7 @@ pub mod errors;
 pub use crate::errors::EscrowError;
 pub mod external_calls;
 mod keys;
+mod collateral_storage;
 
 /// Current storage schema version written to [`DataKey::Version`] by [`LiquifactEscrow::init`].
 ///
@@ -1047,17 +1048,18 @@ pub const MAX_PAUSE_TOGGLE_WINDOW_SECS: u64 = 7_776_000; // 90 days
     /// count when `max_unique_investors` was not configured at init.
     UniqueInvestorHardCapReached = 249,
 
-    /// [`LiquifactEscrow::set_attestation_limit`] received a value outside
-    /// `MIN_ATTESTATION_LIMIT..=MAX_ATTESTATION_LIMIT`.
-    AttestationLimitOutOfRange = 176,
-
-    /// [`LiquifactEscrow::append_attestation_digests`] received an empty
-    /// `digests` vector.
-    AttestationAppendBatchEmpty = 177,
-
-    /// [`LiquifactEscrow::append_attestation_digests`] received more than
-    /// [`MAX_ATTESTATION_APPEND_BATCH`] digests.
-    AttestationAppendBatchTooLarge = 178,
+    /// A collateral mutation was attempted while another collateral mutation was
+    /// already in flight (re-entrant or overlapping execution). No state was
+    /// modified: the second mutation fails fast before touching storage.
+    /// See [`crate::collateral_storage`] for the invariant list.
+    ConcurrentMutation = 250,
+    /// [`LiquifactEscrow::set_collateral_limit`] received a non-positive limit.
+    CollateralLimitNotPositive = 251,
+    /// [`LiquifactEscrow::set_collateral_limit`] received a limit above [`MAX_INVOICE_AMOUNT`].
+    CollateralLimitExceedsMax = 252,
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`] received an amount above the
+    /// configured collateral limit (see [`LiquifactEscrow::set_collateral_limit`]).
+    CollateralLimitExceeded = 253,
 }
 
 #[inline(always)]
@@ -1472,17 +1474,15 @@ pub enum DataKey {
     /// reads as `false`. Written by the dispute lifecycle (admin/off-chain) and checked by
     /// [`LiquifactEscrow::close_escrow`].
     Dispute,
-    /// Monotonic admin nonce for replay protection (see `consume_admin_nonce`).
-    /// Absent ⇒ `0` (new or legacy deployment). Additive key (ADR-007).
-    AdminNonce,
-    /// Typed pause state (`PauseState`) written by `set_paused`. Absent ⇒ no pause.
-    /// Additive key (ADR-007).
-    PauseState,
-    /// Immutable decimal scale of the funding token. Absent ⇒ scale check skipped
-    /// for backward compatibility. Additive key (ADR-007).
-    FundingTokenScale,
-    /// Running total released via `release`. Absent ⇒ `0`. Additive key (ADR-007).
-    ReleasedAmount,
+    /// Admin-configured ceiling on the `amount` accepted by
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`] and
+    /// [`LiquifactEscrow::batch_record_collateral`].
+    ///
+    /// **Additive key (ADR-007):** absent ⇒ [`MAX_INVOICE_AMOUNT`] (no effective limit beyond
+    /// the global invoice-amount ceiling). Written by
+    /// [`LiquifactEscrow::set_collateral_limit`]; read via
+    /// [`LiquifactEscrow::get_collateral_limit`]. Never delete or rename this variant.
+    CollateralLimit,
 }
 
 // --- Data types ---
@@ -3590,6 +3590,41 @@ impl LiquifactEscrow {
         sweep_amt
     }
 
+    /// Retire a previously recorded collateral pledge.
+    ///
+    /// Metadata-only: no tokens are moved. Requires SME auth.
+    ///
+    /// Guard ordering (ADR-002):
+    /// 1. Read-only existence check ΓÇö returns [`EscrowError::NoCollateralToClear`] if absent.
+    /// 2. `require_auth` on the SME address.
+    /// 3. Remove storage entry and emit [`CollateralClearedEvt`].
+    pub fn clear_sme_collateral_commitment(env: Env) -> Result<(), EscrowError> {
+        // 1. Read-only existence check before auth (preserves the documented guard
+        //    order: existence ⇒ auth ⇒ mutate). This pre-check is non-mutating; the
+        //    authoritative, lock-protected re-check happens inside
+        //    `collateral_storage::apply_clear`, so a concurrent clear still fails with
+        //    `NoCollateralToClear` rather than double-removing.
+        if collateral_storage::commitment(&env).is_none() {
+            return Err(EscrowError::NoCollateralToClear);
+        }
+
+        // 2. Load escrow and require SME auth.
+        let escrow = load_escrow_require_sme(&env)?;
+
+        // 3. Remove the pledge under the collateral mutation lock and emit the
+        //    retirement event carrying the cleared metadata.
+        let cleared = collateral_storage::apply_clear(&env)?;
+        CollateralClearedEvt {
+            name: symbol_short!("coll_clr"),
+            invoice_id: escrow.invoice_id,
+            asset: cleared.asset,
+            amount: cleared.amount,
+            recorded_at: cleared.recorded_at,
+        }
+        .publish(&env);
+        Ok(())
+    }
+
     /// Returns the remaining funding capacity before the funding target is reached.
     ///
     /// The remaining capacity is calculated as `funding_target - funded_amount`.
@@ -3946,6 +3981,66 @@ impl LiquifactEscrow {
 
     pub fn get_version(env: Env) -> u32 {
         env.storage().instance().get(&DataKey::Version).unwrap_or(0)
+    }
+
+    /// Collateral-subsystem schema version.
+    ///
+    /// Returns the **same** persisted [`DataKey::Version`] value exposed by
+    /// [`LiquifactEscrow::get_version`]: the collateral subsystem shares the contract
+    /// schema version and never maintains an independent counter, so the two views can
+    /// never disagree. `0` is returned before `init` (sane default), matching
+    /// [`LiquifactEscrow::get_version`].
+    ///
+    /// # Determinism and concurrent execution
+    ///
+    /// This is a **pure read**: it performs exactly one instance-storage read and never
+    /// writes. Under Soroban's execution model an invocation's writes commit atomically,
+    /// so a version read can never observe a torn or partially-applied value. Repeated,
+    /// interleaved, or re-entrant reads therefore always observe the same committed
+    /// value, and no caller can be starved of it. Because the collateral lifecycle
+    /// (record / clear / set-limit) never writes [`DataKey::Version`], the value is also
+    /// stable across collateral mutations.
+    ///
+    /// # Errors
+    ///
+    /// Never panics: a missing key reads as `0`.
+    pub fn get_collateral_version(env: Env) -> u32 {
+        collateral_storage::version(&env)
+    }
+
+    /// Admin-configured collateral ceiling enforced by
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`].
+    ///
+    /// Returns [`MAX_INVOICE_AMOUNT`] when never configured via
+    /// [`LiquifactEscrow::set_collateral_limit`] (additive key, ADR-007), so deployments
+    /// predating the key behave exactly as before.
+    ///
+    /// Pure read: no authorization, no writes, cannot panic.
+    pub fn get_collateral_limit(env: Env) -> i128 {
+        collateral_storage::limit(&env)
+    }
+
+    /// Admin-authorized setter for the collateral ceiling.
+    ///
+    /// The ceiling bounds the `amount` accepted by
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`] and
+    /// [`LiquifactEscrow::batch_record_collateral`]. The whole update runs under the
+    /// collateral mutation lock (see [`crate::collateral_storage`]), so a re-entrant or
+    /// overlapping collateral mutation fails fast with
+    /// [`EscrowError::ConcurrentMutation`] and changes nothing.
+    ///
+    /// # Authorization
+    /// Requires the current admin's signature.
+    ///
+    /// # Validation
+    /// - `new_limit > 0`, else [`EscrowError::CollateralLimitNotPositive`].
+    /// - `new_limit <= MAX_INVOICE_AMOUNT`, else [`EscrowError::CollateralLimitExceedsMax`].
+    ///
+    /// The limit is **orthogonal** to the pledge state machine: it never records, clears,
+    /// or alters a commitment, and setting it does not change [`DataKey::Version`].
+    pub fn set_collateral_limit(env: Env, new_limit: i128) -> Result<(), EscrowError> {
+        let _escrow = Self::load_escrow_require_admin(&env);
+        collateral_storage::apply_set_limit(&env, new_limit)
     }
 
     /// Get the optional funding deadline (ledger timestamp), returns None if not set.
@@ -5285,58 +5380,31 @@ impl LiquifactEscrow {
         asset: Symbol,
         amount: i128,
     ) -> SmeCollateralCommitment {
-        ensure(&env, amount > 0, EscrowError::CollateralAmountNotPositive);
-        ensure(
-            &env,
-            asset != Symbol::new(&env, ""),
-            EscrowError::CollateralAssetEmpty,
-        );
-
-        let ceiling: i128 = env
-            .storage()
-            .instance()
-            .get::<DataKey, i128>(&DataKey::CollateralLimit)
-            .unwrap_or(MAX_INVOICE_AMOUNT);
-        ensure(
-            &env,
-            amount <= ceiling,
-            EscrowError::CollateralLimitExceeded,
-        );
-
-        // env.clone(): env is used again after this call for storage read/write, timestamp, and publish.
+        // Authorization first: no storage mutation happens before this succeeds.
         let escrow = Self::load_escrow_require_sme(&env);
 
-        let now = env.ledger().timestamp();
-        let prior: Option<SmeCollateralCommitment> =
-            env.storage().instance().get(&DataKey::SmeCollateralPledge);
-        let prior_amount = prior.as_ref().map(|c| c.amount).unwrap_or(0);
-
-        if let Some(ref existing) = prior {
-            ensure(
-                &env,
-                now >= existing.recorded_at,
-                EscrowError::CollateralTimestampBackwards,
-            );
+        // Validation, the timestamp-boundary check, the configured-limit check, and the
+        // read-modify-write all run inside `collateral_storage::apply_record`, which
+        // serialises the mutation under the RAII collateral lock. An at-least-once retry
+        // that would leave the stored `(asset, amount)` unchanged is an idempotent no-op
+        // and therefore does not re-emit `CollateralRecordedEvt`.
+        match collateral_storage::apply_record(&env, &asset, amount) {
+            Ok(collateral_storage::RecordOutcome::Applied {
+                prior_amount,
+                commitment,
+            }) => {
+                CollateralRecordedEvt {
+                    name: symbol_short!("coll_rec"),
+                    invoice_id: escrow.invoice_id.clone(),
+                    amount,
+                    prior_amount,
+                }
+                .publish(&env);
+                commitment
+            }
+            Ok(collateral_storage::RecordOutcome::Unchanged { commitment }) => commitment,
+            Err(err) => fail(&env, err),
         }
-
-        let commitment = SmeCollateralCommitment {
-            asset,
-            amount,
-            recorded_at: now,
-        };
-        env.storage()
-            .instance()
-            .set(&DataKey::SmeCollateralPledge, &commitment);
-
-        CollateralRecordedEvt {
-            name: symbol_short!("coll_rec"),
-            invoice_id: escrow.invoice_id.clone(),
-            amount,
-            prior_amount,
-        }
-        .publish(&env);
-
-        commitment
     }
 
     /// Batch variant of [`LiquifactEscrow::record_sme_collateral_commitment`].

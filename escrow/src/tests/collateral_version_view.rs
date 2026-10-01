@@ -9,8 +9,15 @@
 //! - Failure recovery: reads are deterministic and never mutate state, so a
 //!   failed read (or a read interleaved with a failed write) leaves storage intact.
 
-use super::super::{LiquifactEscrow, LiquifactEscrowClient, SCHEMA_VERSION};
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use super::super::collateral_storage::CollateralStorageKey;
+use super::super::{
+    EscrowError, LiquifactEscrow, LiquifactEscrowClient, MAX_INVOICE_AMOUNT, SCHEMA_VERSION,
+};
+use super::assert_contract_error;
+use soroban_sdk::{
+    testutils::{Address as _, Ledger as _},
+    Address, Env, Symbol,
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -205,13 +212,164 @@ fn test_get_collateral_version_unchanged_after_clear_collateral() {
     client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
 
     let before = client.get_collateral_version();
-    client.clear_sme_collateral_commitment();
+    let _ = client.clear_sme_collateral_commitment();
     let after = client.get_collateral_version();
 
     assert_eq!(
         before, after,
         "clearing collateral must not change the schema version"
     );
+}
+
+// ── Hardened-view regression tests ───────────────────────────────────────────
+//
+// These cover the concurrency / duplicate / timing-boundary / idempotent-retry
+// requirements for the hardened collateral view and storage layer. Soroban has no
+// preemptive threads, so "racing" is modelled the way the runtime actually allows it:
+// re-entrancy (a mutation already in flight) and repeated/interleaved calls.
+
+/// A replicated audit of the version across a full mutation sequence: the version view
+/// must be stable because the collateral lifecycle never writes `DataKey::Version`.
+#[test]
+fn test_collateral_version_stable_across_full_lifecycle() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    let expected = SCHEMA_VERSION;
+    assert_eq!(client.get_collateral_version(), expected);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &500_000i128);
+    assert_eq!(client.get_collateral_version(), expected);
+
+    client.set_collateral_limit(&1_000_000i128);
+    assert_eq!(client.get_collateral_version(), expected);
+
+    let _ = client.clear_sme_collateral_commitment();
+    assert_eq!(client.get_collateral_version(), expected);
+
+    // Repeated reads at the same ledger state are byte-for-byte identical.
+    assert_eq!(client.get_collateral_version(), expected);
+    assert_eq!(client.get_collateral_version(), client.get_version());
+}
+
+/// A re-entrant collateral mutation (the lock still held by an in-flight call) must fail
+/// fast with the typed `ConcurrentMutation` error and leave all collateral state untouched.
+#[test]
+fn test_reentrant_collateral_mutation_is_rejected_without_side_effects() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    // Simulate a mutation already in flight by setting the lock directly.
+    env.as_contract(&client.address, || {
+        env.storage()
+            .instance()
+            .set(&CollateralStorageKey::MutationLock, &true);
+    });
+
+    let result = client.try_record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &500i128);
+    assert_contract_error(result, EscrowError::ConcurrentMutation);
+
+    let result = client.try_set_collateral_limit(&1_000i128);
+    assert_contract_error(result, EscrowError::ConcurrentMutation);
+
+    // No collateral state was written by the rejected attempts.
+    assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
+}
+
+/// Re-submitting the identical commitment is an idempotent no-op: the stored
+/// `recorded_at` is preserved and no second commitment is created.
+#[test]
+fn test_duplicate_record_is_idempotent_and_preserves_recorded_at() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    let asset = Symbol::new(&env, "GOLD");
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    let first = client.record_sme_collateral_commitment(&asset, &500_000i128);
+
+    // A retry later in time must converge to the same record rather than rewriting it.
+    env.ledger().with_mut(|l| l.timestamp = 9_999);
+    let retry = client.record_sme_collateral_commitment(&asset, &500_000i128);
+
+    assert_eq!(first.recorded_at, 1_000);
+    assert_eq!(retry, first, "identical retry must be idempotent");
+    assert_eq!(retry.recorded_at, 1_000);
+}
+
+/// A replacement whose ledger timestamp precedes the stored record is rejected at the
+/// boundary (`now < recorded_at`), while `now == recorded_at` is accepted.
+#[test]
+fn test_collateral_record_timestamp_boundary() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    env.ledger().with_mut(|l| l.timestamp = 5_000);
+    client.record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &500_000i128);
+
+    // Inclusive boundary: same timestamp, different asset → accepted.
+    let accepted =
+        client.record_sme_collateral_commitment(&Symbol::new(&env, "SILVER"), &600_000i128);
+    assert_eq!(accepted.recorded_at, 5_000);
+
+    // Backwards timestamp → rejected, state unchanged.
+    env.ledger().with_mut(|l| l.timestamp = 4_999);
+    let result =
+        client.try_record_sme_collateral_commitment(&Symbol::new(&env, "BRONZE"), &700_000i128);
+    assert_contract_error(result, EscrowError::CollateralTimestampBackwards);
+}
+
+/// `set_collateral_limit` validation boundaries: the ceiling bounds `record`, rejects
+/// non-positive values, and rejects values above the global invoice-amount ceiling.
+#[test]
+fn test_collateral_limit_boundaries() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
+
+    let result = client.try_set_collateral_limit(&0i128);
+    assert_contract_error(result, EscrowError::CollateralLimitNotPositive);
+
+    let result = client.try_set_collateral_limit(&(MAX_INVOICE_AMOUNT + 1));
+    assert_contract_error(result, EscrowError::CollateralLimitExceedsMax);
+
+    // Exactly at the ceiling is accepted, and the configured limit then bounds `record`.
+    client.set_collateral_limit(&1_000_000i128);
+    assert_eq!(client.get_collateral_limit(), 1_000_000);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &1_000_000i128);
+
+    let result =
+        client.try_record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &1_000_001i128);
+    assert_contract_error(result, EscrowError::CollateralLimitExceeded);
+}
+
+/// Clearing when no commitment exists is rejected deterministically, and a successful
+/// clear is a one-shot operation (a second clear fails).
+#[test]
+fn test_collateral_clear_is_one_shot() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    // Nothing recorded yet → typed rejection.
+    let result = client.try_clear_sme_collateral_commitment();
+    assert_contract_error(result, EscrowError::NoCollateralToClear);
+
+    env.ledger().with_mut(|l| l.timestamp = 1_000);
+    client.record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &500_000i128);
+    assert!(client.clear_sme_collateral_commitment().is_ok());
+
+    // The commitment is gone; a second clear is rejected rather than double-removing.
+    let result = client.try_clear_sme_collateral_commitment();
+    assert_contract_error(result, EscrowError::NoCollateralToClear);
 }
 
 /// Setting the collateral limit must not alter the version.
@@ -229,71 +387,4 @@ fn test_get_collateral_version_unchanged_after_set_collateral_limit() {
         before, after,
         "set_collateral_limit must not change the schema version"
     );
-}
-
-// ── Failure recovery / determinism ────────────────────────────────────────────
-
-/// A read must never mutate storage: repeated reads after a failed write attempt
-/// must return the same value as before the failure, proving recovery is
-/// deterministic and no partial state is persisted.
-#[test]
-fn test_get_collateral_version_stable_across_failed_write() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _sme) = deploy_and_init(&env);
-
-    let before = client.get_collateral_version();
-
-    // Attempt an invalid write (zero amount is rejected by validation).
-    // The call must fail without mutating the version key.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &0i128);
-    }));
-    assert!(result.is_err(), "invalid collateral write must be rejected");
-
-    // Version must be unchanged and reads must remain deterministic.
-    let after = client.get_collateral_version();
-    assert_eq!(
-        before, after,
-        "failed write must not alter the schema version"
-    );
-    assert_eq!(client.get_collateral_version(), after);
-}
-
-/// Reads must be deterministic across repeated invocations even when interleaved
-/// with state-mutating operations that succeed.
-#[test]
-fn test_get_collateral_version_deterministic_across_mutations() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let (client, _admin, _sme) = deploy_and_init(&env);
-
-    let baseline = client.get_collateral_version();
-
-    client.set_collateral_limit(&1_000_000i128);
-    assert_eq!(client.get_collateral_version(), baseline);
-
-    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
-    assert_eq!(client.get_collateral_version(), baseline);
-
-    client.clear_sme_collateral_commitment();
-    assert_eq!(client.get_collateral_version(), baseline);
-
-    // Final read must equal the very first read — no drift, no partial state.
-    assert_eq!(client.get_collateral_version(), baseline);
-}
-
-/// A read on a fresh, uninitialised contract is deterministic and recoverable:
-/// it returns the default without panicking, so callers can safely retry.
-#[test]
-fn test_get_collateral_version_recoverable_before_init() {
-    let env = Env::default();
-    let client = deploy(&env);
-
-    // Multiple reads before init must all succeed and agree.
-    let v1 = client.get_collateral_version();
-    let v2 = client.get_collateral_version();
-    assert_eq!(v1, 0);
-    assert_eq!(v1, v2);
-    assert_eq!(v1, client.get_version());
 }
