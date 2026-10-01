@@ -1,3 +1,4 @@
+//! Validation boundaries for [`LiquifactEscrow::get_attestation_config`].
 //! Tests for [`LiquifactEscrow::get_attestation_config`].
 //!
 //! Covers:
@@ -8,6 +9,7 @@
 //! - Config matches the individual getters/state.
 //! - Idempotency (pure read, no state mutation).
 //! - Struct shape stability (destructuring).
+//! - Boundary values for append/revoke batch limits and read page size.
 
 use super::super::{
     AttestationConfig, EscrowError, LiquifactEscrow, LiquifactEscrowClient,
@@ -49,7 +51,6 @@ fn init_escrow(env: &Env, client: &LiquifactEscrowClient) -> Address {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     admin
 }
