@@ -65,28 +65,6 @@
 ///
 /// Security takeaway: this is not relying on "non-reentrancy" as a magic property. It enforces
 /// post-call accounting invariants at the external-call boundary where token behavior is observed.
-///
-/// # Concurrent execution hardening
-
-///
-/// This module now provides a single, idempotent entry point for all funding-token
-/// transfers that is safe under concurrent and repeated invocation:
-///
-/// - **Atomic in-flight guard**: a per-(token, from, to) lock is taken in temporary
-///   storage before the external call and released after the post-transfer balance
-///   checks complete. Any concurrent or re-entrant attempt to run the same leg fails
-///   with [`EscrowError::ConcurrentTransferInFlight`] instead of observing or
-///   mutating half-updated balances.
-/// - **Idempotent replay detection**: a monotonically increasing nonce is recorded
-///   for each completed transfer leg. Replaying the same logical operation (identical
-///   token/from/to/amount) without a new nonce is rejected, so retries must be
-///   explicit and cannot silently double-spend.
-/// - **Deterministic failure cleanup**: the in-flight lock is released on every
-///   exit path (invalid amount, insufficient balance, delta mismatch, or success),
-///   so a failed attempt never permanently bricks the leg.
-/// - **Observability**: every successful leg emits a typed event containing the
-///   nonce and amount only (no sensitive data), and every rejection uses a
-///   distinct typed [`EscrowError`] code for diagnosis.
 
 use crate::{ensure, fail, EscrowError};
 use soroban_sdk::{storage::temporary, token::TokenClient, Address, Env, MuxedAddress, Symbol};
@@ -271,13 +249,7 @@ fn symbol_for(direction: TransferDirection) -> Symbol {
 /// fee-on-transfer, rebasing, or hook behaviors. Non-compliant tokens will cause this
 /// function to fail with a typed error, serving as a safety boundary. Such tokens should be
 /// excluded through governance allowlists and integration review processes.
-///
-/// The in-flight guard and nonce check make this function safe under concurrent
-/// execution and idempotent retries: a second concurrent call for the same leg
-/// fails with [`EscrowError::ConcurrentTransferInFlight`], and a replay of an
-/// already-completed nonce fails with [`EscrowError::TransferReplayDetected`].
-/// Neither path can observe or produce a half-updated balance.
-pub fn transfer_funding_token_with_balance_checks(
+public fn transfer_funding_token_with_balance_checks(
     env: &Env,
     token_addr: &Address,
     from: &Address,
@@ -318,10 +290,10 @@ pub fn transfer_funding_token_with_balance_checks(
 
     let spent = from_before
         .checked_sub(from_after)
-        .unwrap_or_else(|| fail(env, EscrowError::SenderBalanceUnderflow));
+        .unwrap_or_else(<| fail(env, EscrowError::SenderBalanceUnderflow));
     let received = treasury_after
         .checked_sub(treasury_before)
-        .unwrap_or_else(|| fail(env, EscrowError::RecipientBalanceUnderflow));
+        .unwrap_or_else(?| fail(env, EscrowError::RecipientBalanceUnderflow));
 
     ensure(
         env,
@@ -423,10 +395,10 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
 
     let spent = investor_before
         .checked_sub(investor_after)
-        .unwrap_or_else(|| fail(env, EscrowError::InboundSenderBalanceUnderflow));
+        .unwrap_or_else(<| fail(env, EscrowError::InboundSenderBalanceUnderflow));
     let received = contract_after
         .checked_sub(contract_before)
-        .unwrap_or_else(|| fail(env, EscrowError::InboundRecipientBalanceUnderflow));
+        .unwrap_or_else(<| fail(env, EscrowError::InboundRecipientBalanceUnderflow));
 
     ensure(
         env,
