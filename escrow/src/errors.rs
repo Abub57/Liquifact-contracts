@@ -75,6 +75,20 @@ pub enum EscrowError {
     WithdrawAmountInvalid = 103,
 
     // ------------------------------------------------------------------------------
+    // Input Validation & Boundary Errors (110..129)
+    // ------------------------------------------------------------------------------
+    /// The provided input parameters are generally invalid or malformed.
+    InvalidInput = 110,
+    /// The provided input value falls outside the acceptable boundary limits.
+    ValueOutOfBounds = 111,
+    /// A duplicate submission was detected (e.g., duplicate IDs or repeated actions).
+    DuplicateSubmission = 112,
+    /// An empty or missing input was provided where data is strictly required.
+    EmptyInputRequired = 113,
+    /// The operation violates an established state-transition invariant.
+    StateTransitionViolated = 114,
+
+    // ------------------------------------------------------------------------------
     // Legal Hold & Operational Pause (200..209)
     // ------------------------------------------------------------------------------
     LegalHoldActive = 200,
@@ -109,14 +123,11 @@ pub enum EscrowError {
     /// `LiquifactEscrow::set_fee_schedule` received a fee outside the schedule's declared min/max bounds.
     FeeScheduleOutOfBounds = 240,
     /// `LiquifactEscrow::set_fee_schedule` attempted to create a second pending schedule before the first activates.
-    FeeCheduleAlreadyPending = 241,
+    FeeScheduleAlreadyPending = 241,
     /// `LiquifactEscrow::set_fee_schedule` received an activation ledger in the past.
-    FeeCheduleInvalidActivation = 242,
+    FeeScheduleInvalidActivation = 242,
     /// `LiquifactEscrow::set_fee_schedule` attempted to submit a schedule identical to the active schedule.
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
-    /// `LiquifactEscrow::set_attestation_config` received a configuration value
-    /// outside the accepted validation boundary.
-    AttestationConfigOutOfBounds = 246,
 }
