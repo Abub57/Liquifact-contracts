@@ -30,7 +30,6 @@ fn init_escrow(env: &Env, client: &crate::LiquifactEscrowClient, admin: &Address
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 }
 
