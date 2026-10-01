@@ -674,6 +674,25 @@ pub enum EscrowError {
     CollateralTimestampBackwards = 62,
     /// [`LiquifactEscrow::clear_sme_collateral_commitment`] called when no pledge exists.
     NoCollateralToClear = 63,
+    /// [`LiquifactEscrow::set_collateral_limit`] received a non-positive limit value.
+    ///
+    /// The collateral limit must be strictly positive (`limit > 0`). A limit of `0` or
+    /// any negative value is rejected before any storage write.
+    CollateralLimitNotPositive = 64,
+    /// [`LiquifactEscrow::set_collateral_limit`] received a limit that exceeds [`MAX_INVOICE_AMOUNT`].
+    ///
+    /// The collateral limit is capped at [`MAX_INVOICE_AMOUNT`] to stay within the same
+    /// overflow-safe arithmetic bounds as the invoice target. Values above this bound are
+    /// rejected before any storage write.
+    CollateralLimitExceedsMax = 65,
+    /// [`LiquifactEscrow::record_sme_collateral_commitment`] / [`LiquifactEscrow::batch_record_collateral`]
+    /// received an `amount` that exceeds the configured collateral limit.
+    ///
+    /// When a limit is set via [`LiquifactEscrow::set_collateral_limit`], every commitment
+    /// amount must satisfy `amount <= limit`. This check runs after the positive-amount and
+    /// non-empty-asset guards. When no limit is configured the check is skipped and amounts
+    /// are bounded only by [`MAX_INVOICE_AMOUNT`].
+    CollateralLimitExceeded = 66,
 
     /// [`LiquifactEscrow::set_investors_allowlisted`] received an empty batch.
     InvestorBatchEmpty = 70,
@@ -1273,6 +1292,14 @@ pub enum DataKey {
     /// Optional SME collateral commitment metadata (record-only ΓÇö not an on-chain asset lock).
     /// Absent when no commitment has been recorded. Replaceable by the SME.
     SmeCollateralPledge,
+    /// Admin-configured maximum allowed collateral commitment amount.
+    ///
+    /// When present, every call to [`LiquifactEscrow::record_sme_collateral_commitment`] and
+    /// [`LiquifactEscrow::batch_record_collateral`] must satisfy `amount <= limit`. Absent ΓçÆ
+    /// no limit is enforced (amounts are still bounded by [`MAX_INVOICE_AMOUNT`]).
+    /// Written by [`LiquifactEscrow::set_collateral_limit`]; read by the validation helpers
+    /// and [`LiquifactEscrow::get_collateral_limit`] / [`LiquifactEscrow::get_collateral_config`].
+    CollateralLimit,
     /// Set to `true` when an investor has exercised a claim after settlement.
     /// **Persistent** storage. Absent ΓçÆ `false`. Written once; a second claim returns without re-emitting.
     InvestorClaimed(Address),
