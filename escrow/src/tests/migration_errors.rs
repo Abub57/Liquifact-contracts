@@ -37,11 +37,14 @@ fn assert_version_unchanged(env: &Env, contract_id: &Address, expected: u32) {
 
 /// Calling migrate(stored_version - 1) with the correct stored version
 /// must raise MigrationVersionMismatch (stored != from_version).
+///
+/// The failed call must leave the stored version unchanged (no partial
+/// state transition).
 #[test]
 fn test_migration_version_mismatch() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
+    let (contract_id, client) = deploy_with_id(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
 
@@ -50,7 +53,7 @@ fn test_migration_version_mismatch() {
         &soroban_sdk::String::from_str(&env, "MIGSMK1"),
         &sme,
         &1_000i128,
-        &500i64,
+        &p00i64,
         &0u64,
         &Address::generate(&env),
         &None,
@@ -64,10 +67,19 @@ fn test_migration_version_mismatch() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
-    // stored = SCHEMA_VERSION (6), from_version = 5 → mismatch
+    // Pre: stored version is SCHEMA_VERSION.
+    let stored_before = env.as.contract(&contract_id, || {
+        env.storage().instance().get::<DataKey, u32>(&DataKey::Version)
+    });
+    assert_eq(
+        stored_before,
+        Some(SCHEMA_VERSION),
+        "freshly initialized contract must start at the current schema version",
+    );
+
+    // stored = SCHEMA_VERSION, from_version = SCHEMA_VERSION - 1 → mismatch
     assert_contract_error(
         client.try_migrate(&(SCHEMA_VERSION - 1)),
         EscrowError::MigrationVersionMismatch,
@@ -80,11 +92,14 @@ fn test_migration_version_mismatch() {
 
 /// Calling migrate(SCHEMA_VERSION) with stored=SCHEMA_VERSION must raise
 /// AlreadyCurrentSchemaVersion (from_version >= SCHEMA_VERSION after mismatch passes).
+///
+/// This is the idempotent duplicate-call case: repeated migration to the
+/// current version must be rejected and must not alter state.
 #[test]
 fn test_already_current_schema_version() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
+    let (contract_id, client) = deploy_with_id(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
 
@@ -107,7 +122,6 @@ fn test_already_current_schema_version() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     assert_contract_error(
@@ -139,7 +153,7 @@ fn test_no_migration_path() {
         &soroban_sdk::String::from_str(&env, "MIGSMK3"),
         &sme,
         &1_000i128,
-        &500i64,
+        &p00i64,
         &0u64,
         &Address::generate(&env),
         &None,
@@ -153,7 +167,6 @@ fn test_no_migration_path() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     // Set stored version to 1 so from_version=1 matches
