@@ -49,7 +49,6 @@ fn init_escrow(env: &Env, client: &LiquifactEscrowClient) -> Address {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     admin
 }
