@@ -61,6 +61,7 @@ mod admin;
 mod attestations;
 mod auth_matrix;
 mod cap_validation;
+mod collateral_version_view;
 // mod collateral_boundary_tests; // file not present in this tree
 // mod collateral_config_view;    // file not present in this tree
 // mod collateral_limit_setter;   // file not present in this tree
