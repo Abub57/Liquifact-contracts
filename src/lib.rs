@@ -8,6 +8,7 @@ const ADMIN_KEY: Symbol = symbol_short!("ADMIN");
 #[repr(u32)]
 pub enum Error {
     NotAuthorized = 1,
+    InvalidYieldTier = 2,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +21,13 @@ pub enum YieldTierState {
 }
 
 pub struct YieldTierContract;
+
+fn validate_yield_tier(tier: &YieldTierState) -> Result<(), Error> {
+    match tier {
+        YieldTierState::Tier1 | YieldTierState::Tier2 | YieldTierState::Tier3 => Ok(()),
+        YieldTierState::Unset => Err(Error::InvalidYieldTier),
+    }
+}
 
 #[contractimpl]
 impl YieldTierContract {
@@ -50,9 +58,13 @@ impl YieldTierContract {
     }
 
     /// Sets the yield-tier state (admin-only).
+    ///
+    /// Valid payloads are constrained to the concrete tier states. `Unset` is a
+    /// read-time default and is not allowed as a persisted configuration value.
     pub fn set_yield_tier(env: Env, tier: YieldTierState) -> Result<(), Error> {
         let admin: Address = env.storage().instance().get(&ADMIN_KEY).unwrap();
         admin.require_auth();
+        validate_yield_tier(&tier)?;
         env.storage().instance().set(&YIELD_TIER_KEY, &tier);
         env.events().publish((symbol_short!("tier_set"),), (tier.clone(),));
         Ok(())
