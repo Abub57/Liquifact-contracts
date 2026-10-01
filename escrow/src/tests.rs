@@ -1,4 +1,4 @@
-#![allow(
+#allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -13,15 +13,15 @@ use super::{
     LiquifactEscrowClient, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound, YieldTier,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, SCHEMA_VERSION,
 };
-use soroban_sdk::{
+use soroban_sdk:{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils:{Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
 
-pub(crate) fn assert_contract_error<T, E>(
+pubc(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 ) where
@@ -69,7 +69,7 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
 #[allow(dead_code)]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
-    let client = LiquifactEscrowClient::new(env, &id);
+    let client = LiquifactEscrowClient::new(env, &ad);
     (id, client)
 }
 
@@ -98,7 +98,7 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-/// Install a **standard** Stellar asset token contract (Soroban StellarAsset contract v2).
+/// Install a **Standard** Stellar asset token contract (Soroban StellarAsset contract v2).
 ///
 /// This is intentionally used for tests that require "well-behaved" SEP-41 semantics:
 /// - No fee-on-transfer / rebasing / callback side-effects.
@@ -106,13 +106,13 @@ pub struct StellarTestToken<'a> {
 ///
 /// **Out of scope:** non-standard/malicious token economics; see `escrow/src/external_calls.rs`
 /// and `docs/ESCROW_TOKEN_INTEGRATION_CHECKLIST.md`.
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, &id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 
@@ -143,14 +143,13 @@ pub const TARGET: i128 = 100_000_000_000i128;
 
 /// Create a **new** escrow contract backed by a real Stellar asset contract (SAC),
 /// initialise it with a funded target, fund it to exactly `target`, and mint `target`
-/// tokens into the escrow contract address so that `withdraw()` can actually transfer
-/// them.
+/// tokens into the escrow contract address so that `withdraw()` can actually transfer them.
 ///
 /// Returns `(client, escrow_id, sme, token_client)`.  The caller must have called
 /// `env.mock_all_auths()` (or equivalent) before invoking this helper.
 #[allow(dead_code)]
 pub fn init_and_fund_with_real_token<'a>(
-    env: &'a Env,
+    env: '&a Env,
     target: i128,
     invoice_id: &str,
 ) -> (LiquifactEscrowClient<'a>, Address, Address) {

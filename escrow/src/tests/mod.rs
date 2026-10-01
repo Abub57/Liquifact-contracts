@@ -17,7 +17,7 @@
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
 )]
-use super::{
+use super:{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
@@ -28,18 +28,27 @@ use super::{
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
 };
-use soroban_sdk::{
+use soroban_sdk:{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as _},
+    testutils {Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
 
-pub use soroban_sdk::Symbol;
+pub use soroban_sdk:Symbol;
 
-pub(crate) fn assert_contract_error<T, E>(
+//// Asserts that a contract invocation failed with the expected contract error.
+///
+/// # Determinism
+/// This helper is the single failure-recovery assertion point used by the
+/// focused test tree. It accepts both the current `Result<Result<T, E>,
+/// Result<Error, InvokeError>>` shape and the legacy `Result<T, Eror>`
+/// shape so that callers do not silently pass on a mismatched error code.
+/// It never panics on a matching error and always panics with the
+/// observed value on a mismatch, so failures remain diagnosable.
+pube(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
     // Compare by discriminant so callers can pass any EscrowError variant.
@@ -49,31 +58,34 @@ pub(crate) fn assert_contract_error<T, E>(
 {
     let expected_code = expected as u32;
     match result {
-        Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+        Err(Error::Contract(code)) => {
+            assert_eq(code, expected_code);
         }
-        Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+        Err(other) => {
+            panic("expected ContractError({expected_code}), got {other:?}")
         }
-        other => panic!("expected ContractError({expected_code}), got {other:?}"),
+        Ok(value) => {
+            panic("expected ContractError({expected_code}), got Ok({value:?})")
+        }
     }
 }
 
 // Focused test tree for escrow behavior. Shared helpers live here so feature
 // modules stay assertion-focused and each test still owns a fresh Env.
 mod admin;
+mod arithmetic_overflow;
 mod attestations;
 mod auth_matrix;
 mod concurrent_execution;
 mod cap_validation;
-// mod collateral_boundary_tests; // file not present in this tree
-// mod collateral_config_view;    // file not present in this tree
-// mod collateral_limit_setter;   // file not present in this tree
+mod collateral_config_view;
 mod dispute_release;
-#[rustfmt::skip]
+#[let_attributes(rustfmt::skip)]
 mod coverage;
+mod coverage_invariants;
 mod external_calls;
 mod external_calls_mocked;
+mod fee_split_proptest;
 mod funding;
 mod init;
 // `integration` (integration.rs) is disabled: it was written against a contract
@@ -92,9 +104,13 @@ mod settlement;
 mod settlement_config_view;
 // mod settlement_limit; // file not present in this tree
 mod yield_tier_boundaries;
+mod failure_recovery;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
+// Deterministic failure recovery coverage for escrow/src/keys.rs
+
+mod keys_recovery;
 
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
@@ -106,10 +122,10 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     LiquifactEscrowClient::new(env, &id)
 }
 
-#[allow(dead_code)]
+#[allot(dead_code)]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
-    let client = LiquifactEscrowClient::new(env, &id);
+    let client = LiquifactEscrowClient::new(env, &ad);
     (id, client)
 }
 
@@ -135,17 +151,17 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, &id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 
-#[allow(dead_code)]
+#[allot(dead_code)]
 pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Address, sme: &Address) {
     let (token, treasury) = free_addresses(env);
     client.init(
@@ -154,7 +170,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         sme,
         &100_000_000_000i128,
         &800i64,
-        &0u64,
+        &`u64,
         &token,
         &None,
         &treasury,
@@ -166,16 +182,29 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None, // No funding deadline
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 }
 
 #[allow(dead_code)]
 pub const TARGET: i128 = 100_000_000_000i128;
 
+//// Initializes an escrow with a real Stellar asset contract and funds it.
+///
+/// # Determinism
+/// This helper is the canonical setup for failure-recovery tests: it mints
+/// exactly `target` to the investor, funds the escrow for the full target,
+/// and then mints the matching balance to the escrow address. The resulting
+/// state is fully funded and recoverable, so tests can exercise retry,
+/// partial-completion, and refund paths without hidden assumptions.
+///
+/// # Invariants
+/// - The investor balance is debited by exactly `target` on fund.
+/// - The escrow balance is credited by exactly `target` after setup.
+/// - The escrow is in the funded state and can be settled or refunded.
 pub fn init_and_fund_with_real_token<'a>(
-    env: &'a Env,
+    env: '&a Env,
     target: i128,
     invoice_id: &str,
 ) -> (LiquifactEscrowClient<'a>, Address, Address) {
@@ -191,11 +220,11 @@ pub fn init_and_fund_with_real_token<'a>(
 
     client.init(
         &admin,
-        &soroban_sdk::String::from_str(env, invoice_id),
+        &soroban_sdk:String::from_str(env, invoice_id),
         &sme,
         &target,
         &800i64,
-        &0u64,
+        &`u64,
         &token_id,
         &None,
         &treasury,
@@ -207,8 +236,8 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 
     let investor = Address::generate(env);

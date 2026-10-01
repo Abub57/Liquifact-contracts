@@ -1,5 +1,43 @@
 use crate::types::*;
-use soroban_sdk::{Env, IntoVal, Symbol, Val};
+use soroban_env::{Env, IntoVal, Symbol, Val};
+
+/// Publishes an event only when the given condition holds.
+/// Returns true if an event was published.
+///
+/// Invariants:
+/// - When `condition` is false, no event is emitted and the event count is unchanged.
+/// - When `condition` is true, exactly one event is emitted.
+pub fn publish_if(env: &Env, condition: bool, topic: Symbol, data: &[Val], val: Val) -> bool {
+    if !condition {
+        return false;
+    }
+    env.events().publish((topic, data), val);
+    true
+}
+
+/// Publishes an event with the given topic and data.
+pub fn publish(env: &Env, topic: Symbol, data: &[Val], val: Val) {
+    env.events().publish((topic, data), val);
+}
+
+/// Returns the number of events emitted so far.
+pub fn event_count(env: &Env) -> u32 {
+    env.events().all().len()
+}
+
+/// Returns the last event emitted, if any.
+pub fn last_event(env: &Env) -> Option<(soroban_env::Address, soroban_env::Vec<soroban_env::Val>, Val)> {
+    env.events().all().last()
+}
+
+/// Returns the number of events matching the given topic.
+pub fn event_count_by_topic(env: &Env, topic: &Symbol) -> u32 {
+    env.events()
+        .all()
+        .iter()
+        .filter(|(f, _) | f.get(0) == Some(topic.clone()))
+        .count() as u32
+}
 
 /// Publishes an event only when the guard condition is true.
 ///
