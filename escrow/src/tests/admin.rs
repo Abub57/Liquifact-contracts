@@ -258,6 +258,36 @@ fn test_set_protocol_fee_bps_rejects_out_of_range_values() {
 }
 
 #[test]
+fn test_set_protocol_fee_bps_accepts_inclusive_bounds_and_rejections_are_atomic() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    assert_eq!(client.set_protocol_fee_bps(&1i64), 1i64);
+    assert_eq!(client.set_protocol_fee_bps(&0i64), 0i64);
+    assert_eq!(client.get_protocol_fee_bps(), 0i64);
+
+    assert_eq!(client.set_protocol_fee_bps(&10_000i64), 10_000i64);
+    let events_before_rejections = env.events().all().events().len();
+
+    assert_contract_error(
+        client.try_set_protocol_fee_bps(&-1i64),
+        EscrowError::ProtocolFeeBpsOutOfRange,
+    );
+    assert_eq!(client.get_protocol_fee_bps(), 10_000i64);
+    assert_eq!(env.events().all().events().len(), events_before_rejections);
+
+    assert_contract_error(
+        client.try_set_protocol_fee_bps(&10_001i64),
+        EscrowError::ProtocolFeeBpsOutOfRange,
+    );
+    assert_eq!(client.get_protocol_fee_bps(), 10_000i64);
+    assert_eq!(env.events().all().events().len(), events_before_rejections);
+}
+
+#[test]
 #[should_panic]
 fn test_set_protocol_fee_bps_requires_admin_auth() {
     let env = Env::default();
@@ -682,6 +712,7 @@ fn test_propose_admin_rejects_unchanged_pending_admin() {
         client.try_propose_admin(&pending, &None),
         EscrowError::PendingAdminUnchanged,
     );
+    assert_eq!(client.get_pending_admin(), Some(pending));
 }
 
 #[test]
@@ -2253,6 +2284,31 @@ fn test_update_maturity_edge_cases_success() {
 
     let updated2 = client.update_maturity(&500u64, &1u32);
     assert_eq!(updated2.maturity, 500u64);
+}
+
+#[test]
+fn test_update_maturity_accepts_inclusive_time_and_horizon_boundaries() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    env.ledger().set_timestamp(1_000);
+    default_init(&client, &env, &admin, &sme);
+    client.update_maturity_max_horizon(&10u64);
+
+    let at_now = client.update_maturity(&1_000u64);
+    assert_eq!(at_now.maturity, 1_000u64);
+    assert_contract_error(
+        client.try_update_maturity(&999u64),
+        EscrowError::MaturityInPast,
+    );
+    assert_eq!(client.get_escrow().maturity, 1_000u64);
+
+    let at_horizon = client.update_maturity(&1_010u64);
+    assert_eq!(at_horizon.maturity, 1_010u64);
+    assert_contract_error(
+        client.try_update_maturity(&1_011u64),
+        EscrowError::MaturityExceedsMaxHorizon,
+    );
+    assert_eq!(client.get_escrow().maturity, 1_010u64);
 }
 
 // ── Authorization guard ordering audit (issue #265) ───────────────────────────
