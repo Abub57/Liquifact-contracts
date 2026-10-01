@@ -202,18 +202,15 @@ fn test_edge_case_maximum_amount_transfer() {
     assert_eq!(treasury_after, large_amount);
 }
 
-// ── Concurrency / idempotency hardening (Issue: harden concurrent execution) ─
+// ── Deterministic failure recovery for transfer_funding_token_with_balance_checks ──
 //
-// `transfer_funding_token_with_balance_checks` performs a read-check-transfer
-// sequence. These tests pin the invariants that make repeated and interleaved
-// invocations safe: each call must observe the *live* balance (no cached/stale
-// reads), reject when the live balance is insufficient, and produce deltas that
-// are exactly equal to the requested amount regardless of prior calls.
+// Invariant: when a transfer fails (insufficient balance, zero/negative amount),
+// no state is mutated and the operation is safely retryable. A subsequent valid
+// transfer must succeed and produce exact balance deltas, proving recovery is
+// deterministic and does not leak partial state.
 
 #[test]
-fn test_repeated_identical_transfers_are_deterministic() {
-    // Duplicate work: issuing the same transfer twice must not double-count or
-    // silently succeed on the second call once funds are exhausted.
+fn failed_transfer_leaves_state_unchanged_and_is_retryable() {
     let env = Env::default();
     env.mock_all_auths();
 
@@ -221,105 +218,74 @@ fn test_repeated_identical_transfers_are_deterministic() {
     let holder = deploy_id(&env);
     let treasury = Address::generate(&env);
 
-    let amount = 250i128;
-    token.stellar.mint(&holder, &amount);
-
-    // First call drains the holder exactly.
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
-    assert_eq!(token.token.balance(&holder), 0i128);
-    assert_eq!(token.token.balance(&treasury), amount);
-
-    // Second identical call must fail: the live balance is now zero, so the
-    // balance check must reject rather than reading a stale pre-transfer value.
-    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
-    }));
-    assert!(
-        result.is_err(),
-        "duplicate transfer must be rejected once balance is exhausted"
-    );
-
-    // State must be unchanged by the failed attempt.
-    assert_eq!(token.token.balance(&holder), 0i128);
-    assert_eq!(token.token.balance(&treasury), amount);
-}
-
-#[test]
-fn test_interleaved_transfers_observe_live_balance() {
-    // Racing requests: two senders draining the same recipient must each see
-    // the recipient's live balance, so cumulative deltas equal the sum of the
-    // individual amounts with no lost or duplicated value.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let token = install_stellar_asset_token(&env);
-    let holder_a = deploy_id(&env);
-    let holder_b = deploy_id(&env);
-    let treasury = Address::generate(&env);
-
-    let amount_a = 400i128;
-    let amount_b = 600i128;
-    token.stellar.mint(&holder_a, &amount_a);
-    token.stellar.mint(&holder_b, &amount_b);
-
+    // Holder has 100, attempt to transfer 500 → must fail without mutation.
+    token.stellar.mint(&holder, &100i128);
+    let holder_before = token.token.balance(&holder);
     let treasury_before = token.token.balance(&treasury);
-
-    // Interleave: A then B then A again (A's second call must fail).
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder_a, &treasury, amount_a);
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder_b, &treasury, amount_b);
-
-    let treasury_after = token.token.balance(&treasury);
-    assert_eq!(
-        treasury_after - treasury_before,
-        amount_a + amount_b,
-        "cumulative recipient delta must equal sum of transfers"
-    );
-    assert_eq!(token.token.balance(&holder_a), 0i128);
-    assert_eq!(token.token.balance(&holder_b), 0i128);
-}
-
-#[test]
-#[should_panic]
-fn test_transfer_exceeding_live_balance_is_rejected() {
-    // Boundary: requesting one unit more than the live balance must be rejected
-    // by the balance check, never partially applied.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let token = install_stellar_asset_token(&env);
-    let holder = deploy_id(&env);
-    let treasury = Address::generate(&env);
-
-    let balance = 100i128;
-    token.stellar.mint(&holder, &balance);
-
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, balance + 1);
-}
-
-#[test]
-fn test_transfer_exact_live_balance_succeeds_and_is_idempotent_after_drain() {
-    // Boundary: transferring exactly the live balance succeeds; a subsequent
-    // call with any positive amount must fail, proving no stale state is kept.
-    let env = Env::default();
-    env.mock_all_auths();
-
-    let token = install_stellar_asset_token(&env);
-    let holder = deploy_id(&env);
-    let treasury = Address::generate(&env);
-
-    let balance = 777i128;
-    token.stellar.mint(&holder, &balance);
-
-    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, balance);
-    assert_eq!(token.token.balance(&holder), 0i128);
-    assert_eq!(token.token.balance(&treasury), balance);
+    assert_eq!(holder_before, 100i128);
+    assert_eq!(treasury_before, 0i128);
 
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1i128);
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 500i128);
     }));
-    assert!(result.is_err(), "post-drain transfer must be rejected");
+    assert!(result.is_err(), "over-balance transfer must fail");
+
+    // State must be unchanged after the failed attempt.
+    assert_eq!(token.token.balance(&holder), holder_before);
+    assert_eq!(token.token.balance(&treasury), treasury_before);
+
+    // Retry with a valid amount must succeed deterministically.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 100i128);
     assert_eq!(token.token.balance(&holder), 0i128);
-    assert_eq!(token.token.balance(&treasury), balance);
+    assert_eq!(token.token.balance(&treasury), 100i128);
+}
+
+#[test]
+fn zero_amount_failure_is_retryable_with_valid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &250i128);
+
+    // Zero-amount attempt must fail without mutating balances.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0i128);
+    }));
+    assert!(result.is_err(), "zero-amount transfer must fail");
+    assert_eq!(token.token.balance(&holder), 250i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    // Recovery: a valid transfer succeeds and preserves exact deltas.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 250i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 250i128);
+}
+
+#[test]
+fn negative_amount_failure_is_retryable_with_valid_amount() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &75i128);
+
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, -1i128);
+    }));
+    assert!(result.is_err(), "negative-amount transfer must fail");
+    assert_eq!(token.token.balance(&holder), 75i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 75i128);
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 75i128);
 }
 
 // ── Liability floor tests for sweep_terminal_dust ────────────────────────────

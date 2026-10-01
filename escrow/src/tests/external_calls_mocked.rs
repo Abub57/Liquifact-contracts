@@ -1,1 +1,733 @@
-Ly8hIFRlc3RzIGZvciBiYWxhbmNlLWRlbHRhIGludmFyaWFudHMgd2l0aCBtb2NrZWQgdG9rZW5zLgovLy8KLy8vIFRoaXMgbW9kdWxlIGNvbnRhaW5zIHRlc3RzIHRoYXQgd291bGQgZmFpbCBpZiBiYWxhbmNlIGRlbHRhcyBkaXZlcmdlIGZyb20gZXhwZWN0ZWQgYmVoYXZpb3IuCi8vLyBVc2VzIG1vY2tlZCB0b2tlbiBpbXBsZW1lbnRhdGlvbnMgd2hlcmUgZmVhc2libGUgaW4gdGhlIFNvcm9iYW4gdGVzdCBoYXJuZXNzLgoKdXNlIHN1cGVyOjpzdXBlcjo6ZXh0ZXJuYWxfY2FsbHM6OnsKICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcywgdHJhbnNmZXJfaW50b19lc2Nyb3dfd2l0aF9iYWxhbmNlX2NoZWNrcywKfTsKdXNlIHN1cGVyOjoqOwp1c2Ugc29yb2Jhbl9zZGs6Ontjb250cmFjdCwgY29udHJhY3RpbXBsLCB0b2tlbjo6VG9rZW5JbnRlcmZhY2UsIEFkZHJlc3MsIEVudiwgTXV4ZWRBZGRyZXNzfTsKCi8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KLS8vIE1vY2s6IGZlZS1vbi10cmFuc2ZlciB0b2tlbgotLy8gU3RlYWxzIDElIG9uIGV2ZXJ5IHRyYW5zZmVyIOKAlCByZWNpcGllbnQgZ2V0cyBsZXNzIHRoYW4gc2VuZGVyIHNlbnQuCi8vIFJlZ2lzdGVyZWQgYXMgYSByZWFsIFNvcm9iYW4gY29udHJhY3Qgc28gVG9rZW5DbGllbnQgY2FuIGRpc3BhdGNoIHRvIGl0LgovLyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCgojW2NvbnRyYWN0XQpwdWIgc3RydWN0IEZlZU9uVHJhbnNmZXJUb2tlbjsKCiNbY29udHJhY3RpbXBsXQppbXBsIFRva2VuSW50ZXJmYWNlIGZvciBGZWVPblRyYW5zZmVyVG9rZW4gewogICAgZm4gYmFsYW5jZShlbnY6IEVudiwgaWQ6IEFkZHJlc3MpIC0+IGkxMjggewogICAgICAgIGVudi5zdG9yYWdlKCkucGVyc2lzdGVudCgpLmdldCgmaWQpLnVud3JhcF9vcigwKQogICAgfQoKICAgIGZuIHRyYW5zZmVyKGVudjogRW52LCBmcm9tOiBBZGRyZXNzLCB0bzogTXV4ZWRBZGRyZXNzLCBhbW91bnQ6IGkxMjgpIHsKICAgICAgICBmcm9tLnJlcXVpcmVfYXV0aCgpOwogICAgICAgIGxldCBmZWUgPSBhbW91bnQgLyAxMDA7IC8vIHN0ZWFsIDElCiAgICAgICAgbGV0IGNyZWRpdGVkID0gYW1vdW50IC0gZmVlOyAvLyByZWNpcGllbnQgZ2V0cyBsZXNzCgogICAgICAgIGxldCB0b19hZGRyID0gdG8uYWRkcmVzcygpOwoKICAgICAgICBsZXQgZnJvbV9iYWwgPSBTZWxmOjpiYWxhbmNlKGVudi5jbG9uZSgpLCBmcm9tLmNsb25lKCkpOwogICAgICAgIGVudi5zdG9yYWdlKCkucGVyc2lzdGVudCgpLnNldCgmZnJvbSwgJihmcm9tX2JhbCAtIGFtb3VudCkpOyAvLyBmdWxsIGRlYml0CgogICAgICAgIGxldCB0b19iYWwgPSBTZWxmOjpiYWxhbmNlKGVudi5jbG9uZSgpLCB0b19hZGRyLmNsb25lKCkpOwogICAgICAgIGVudi5zdG9yYWdlKCkKICAgICAgICAgICAgLnBlcnNpc3RlbnQoKQogICAgICAgICAgICAuc2V0KCZ0b19hZGRyLCAmKHRvX2JhbCArIGNyZWRpdGVkKSk7IC8vIHVuZGVyLWNyZWRpdAogICAgfQoKICAgIGZuIGFsbG93YW5jZShfZW52OiBFbnYsIF9mcm9tOiBBZGRyZXNzLCBfc3BlbmRlcjogQWRkcmVzcykgLT4gaTEyOCB7CiAgICAgICAgMAogICAgfQogICAgZm4gYXBwcm92ZShfZW52OiBFbnYsIF9mcm9tOiBBZGRyZXNzLCBfc3BlbmRlcjogQWRkcmVzcywgX2Ftb3VudDogaTEyOCwgX2V4cDogdTMyKSB7fQogICAgZm4gdHJhbnNmZXJfZnJvbShfZW52OiBFbnYsIF9zcGVuZGVyOiBBZGRyZXNzLCBfZnJvbTogQWRkcmVzcywgX3RvOiBBZGRyZXNzLCBfYW1vdW50OiBpMTI4KSB7CiAgICAgICAgdW5pbXBsZW1lbnRlZCgpCiAgICB9CiAgICBmbiBidXJuKF9lbnY6IEVudiwgX2Zyb206IEFkZHJlc3MsIF9hbW91bnQ6IGkxMjgpIHsKICAgICAgICB1bmltcGxlbWVudGVkKCkKICAgIH0KICAgIGZuIGJ1cm5fZnJvbShfZW52OiBFbnYsIF9zcGVuZGVyOiBBZGRyZXNzLCBfZnJvbTogQWRkcmVzcywgX2Ftb3VudDogaTEyOCkgewogICAgICAgIHVuaW1wbGVtZW50ZWQoKQogICAgfQogICAgZm4gZGVjaW1hbHMoX2VudjogRW52KSAtPiB1MzIgewogICAgICAgIDcKICAgIH0KICAgIGZuIG5hbWUoZW52OiBFbnYpIC0+IHNvcm9iYW5fc2RrOjpTdHJpbmcgewogICAgICAgIHNvcm9iYW5fc2RrOjpTdHJpbmc6OmZyb21fc3RyKCZlbnYsICJGZWVUb2tlbiIpCiAgICB9CiAgICBmbiBzeW1ib2woZW52OiBFbnYpIC0+IHNvcm9iYW5fc2RrOjpTdHJpbmcgewogICAgICAgIHNvcm9iYW5fc2RrOjpTdHJpbmc6OmZyb21fc3RyKCZlbnYsICJGRUUiKQogICAgfQp9CgovLy8gTWludCB0b2tlbnMgZGlyZWN0bHkgaW50byB0aGUgZmVlIHRva2VuJ3Mgc3RvcmFnZSAoYnlwYXNzZXMgdHJhbnNmZXIpLgpmbiBtaW50X2ZlZV90b2tlbihlbnY6ICZFbnYsIGNvbnRyYWN0X2lkOiAmQWRkcmVzcywgdG86ICZBZGRyZXNzLCBhbW91bnQ6IGkxMjgpIHsKICAgIGVudi5hc19jb250cmFjdChjb250cmFjdF9pZCwgfHwgewogICAgICAgIGxldCBjdXJyZW50OiBpMTI4ID0gZW52LnN0b3JhZ2UoKS5wZXJzaXN0ZW50KCkuZ2V0KHRvKS51bndyYXBfb3IoMCk7CiAgICAgICAgZW52LnN0b3JhZ2UoKS5wZXJzaXN0ZW50KCkuc2V0KHRvLCAmKGN1cnJlbnQgKyBhbW91bnQpKTsKICAgIH0pOwp9CgovLyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCi8vIFRlc3RzOiBmZWUtb24tdHJhbnNmZXIgcmVqZWN0aW9uICh0aGUgbWFpbiBnb2FsIG9mIHRoaXMgaXNzdWUpCi8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KCiNbdGVzdF0KI1tzaG91bGRfcGFuaWNdCmZuIHRlc3RfZmVlX29uX3RyYW5zZmVyX3Rva2VuX3JlamVjdGVkKCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IGZlZV90b2tlbl9pZCA9IGVudi5yZWdpc3RlcihGZWVPblRyYW5zZmVyVG9rZW4sICgpKTsKICAgIGxldCBob2xkZXIgPSBBZGRyZXNzOjpnZW5lcmF0ZSgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIG1pbnRfZmVlX3Rva2VuKCZlbnYsICZmZWVfdG9rZW5faWQsICZob2xkZXIsIDEwMDBpMTI4KTsKCiAgICAvLyBQYW5pY3M6IHJlY2lwaWVudCBnZXRzIDk5MCBidXQgZnVuY3Rpb24gZXhwZWN0cyBleGFjdGx5IDEwMDAKICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcygmZW52LCAmZmVlX3Rva2VuX2lkLCAmaG9sZGVyLCAmdHJlYXN1cnksIDEwMDBpMTI4KTsKfQoKLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQovLyBUZXN0czogcG9zaXRpdmUtYW1vdW50IGd1YXJkCi8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KCiNbdGVzdF0KI1tzaG91bGRfcGFuaWNdCmZuIHRlc3RfemVyb19hbW91bnRfcmVqZWN0ZWQoKSB7CiAgICBsZXQgZW52ID0gRW52OjpkZWZhdWx0KCk7CiAgICBlbnYubW9ja19hbGxfYXV0aHMoKTsKICAgIGxldCB0b2tlbiA9IGluc3RhbGxfc3RlbGxhcl9hc3NldF90b2tlbigmZW52KTsKICAgIGxldCBob2xkZXIgPSBkZXBsb3lfaWQoJmVudik7CiAgICBsZXQgdHJlYXN1cnkgPSBBZGRyZXNzOjpnZW5lcmF0ZSgmZW52KTsKCiAgICB0cmFuc2Zlcl9mdW5kaW5nX3Rva2VuX3dpdGhfYmFsYW5jZV9jaGVja3MoJmVudiwgJnRva2VuLmlkLCAmaG9sZGVyLCAmdHJlYXN1cnksIDApOwp9CgojW3Rlc3RdCiNbc2hvdWxkX3BhbmljXQpmbiB0ZXN0X25lZ2F0aXZlX2Ftb3VudF9yZWplY3RlZCgpIHsKICAgIGxldCBlbnYgPSBFbnY6OmRlZmF1bHQoKTsKICAgIGVudi5tb2NrX2FsbF9hdXRocygpOwogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcygmZW52LCAmdG9rZW4uaWQsICZob2xkZXIsICZ0cmVhc3VyeSwgLTFpMTI4KTsKfQoKLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQovLyBUZXN0czogaW5zdWZmaWNpZW50IGJhbGFuY2UgZ3VhcmQKLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQoKI1t0ZXN0XQojW3Nob3VsZF9wYW5pY10KZm4gdGVzdF9pbnN1ZmZpY2llbnRfYmFsYW5jZV9yZWplY3RlZCgpIHsKICAgIGxldCBlbnYgPSBFbnY6OmRlZmF1bHQoKTsKICAgIGVudi5tb2NrX2FsbF9hdXRocygpOwogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIC8vIE1pbnQgb25seSA1MDAgYnV0IHRyeSB0byB0cmFuc2ZlciAxMDAwCiAgICB0b2tlbi5zdGVsbGFyLm1pbnQoJmhvbGRlciwgJjUwMGkxMjgpOwoKICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcygmZW52LCAmdG9rZW4uaWQsICZob2xkZXIsICZ0cmVhc3VyeSwgMTAwMGkxMjgpOwp9CgovLyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCi8vIFRlc3RzOiBjb21wbGlhbnQgdG9rZW4gKGNvbnRyb2wgY2FzZXMg4oCUIHRoZXNlIHNob3VsZCBhbGwgcGFzcykKLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQoKI1t0ZXN0XQpmbiB0ZXN0X2NvbXBsaWFudF90b2tlbl9wYXNzZXMoKSB7CiAgICBsZXQgZW52ID0gRW52OjpkZWZhdWx0KCk7CiAgICBlbnYubW9ja19hbGxfYXV0aHMoKTsKCiAgICBsZXQgdG9rZW4gPSBpbnN0YWxsX3N0ZWxsYXJfYXNzZXRfdG9rZW4oJmVudik7CiAgICBsZXQgaG9sZGVyID0gZGVwbG95X2lkKCZlbnYpOwogICAgbGV0IHRyZWFzdXJ5ID0gQWRkcmVzczo6Z2VuZXJhdGUoJmVudik7CgogICAgbGV0IGFtb3VudCA9IDEwMDBpMTI4OwogICAgdG9rZW4uc3RlbGxhci5taW50KCZob2xkZXIsICZhbW91bnQpOwoKICAgIGxldCBob2xkZXJfYmVmb3JlID0gdG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKTsKICAgIGxldCB0cmVhc3VyeV9iZWZvcmUgPSB0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeSk7CgogICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKCZlbnYsICZ0b2tlbi5pZCwgJmhvbGRlciwgJnRyZWFzdXJ5LCBhbW91bnQpOwoKICAgIGxldCBob2xkZXJfYWZ0ZXIgPSB0b2tlbi50b2tlbi5iYWxhbmNlKCZob2xkZXIpOwogICAgbGV0IHRyZWFzdXJ5X2FmdGVyID0gdG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkpOwoKICAgIGxldCB0b3RhbF9iZWZvcmUgPSBob2xkZXJfYmVmb3JlICsgdHJlYXN1cnlfYmVmb3JlOwogICAgbGV0IHRvdGFsX2FmdGVyID0gaG9sZGVyX2FmdGVyICsgdHJlYXN1cnlfYWZ0ZXI7CgogICAgYXNzZXJ0X2VxISh0b3RhbF9iZWZvcmUsIHRvdGFsX2FmdGVyLCAidG90YWwgc3VwcGx5IG11c3QgYmUgY29uc2VydmVkIik7CiAgICBhc3NlcnRfZXEhKGhvbGRlcl9iZWZvcmUgLSBob2xkZXJfYWZ0ZXIsIGFtb3VudCk7CiAgICBhc3NlcnRfZXEhKHRyZWFzdXJ5X2FmdGVyIC0gdHJlYXN1cnlfYmVmb3JlLCBhbW91bnQpOwp9CgojW3Rlc3RdCmZuIHRlc3RfbWluaW11bV9hbW91bnRfcGFzc2VzKCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIHRva2VuLnN0ZWxsYXIubWludCgmaG9sZGVyLCAmMWkxMjgpOwoKICAgIGxldCBob2xkZXJfYmVmb3JlID0gdG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKTsKICAgIGxldCB0cmVhc3VyeV9iZWZvcmUgPSB0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeSk7CgogICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKCZlbnYsICZ0b2tlbi5pZCwgJmhvbGRlciwgJnRyZWFzdXJ5LCAxaTEyOCk7CgogICAgYXNzZXJ0X2VxIShob2xkZXJfYmVmb3JlIC0gdG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKSwgMWkxMjgpOwogICAgYXNzZXJ0X2VxISh0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeSkgLSB0cmVhc3VyeV9iZWZvcmUsIDFpMTI4KTsKfQoKI1t0ZXN0XQpmbiB0ZXN0X2xhcmdlX3RyYW5zZmVyX25vX292ZXJmbG93KCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIGxldCBsYXJnZV9hbW91bnQgPSBpMTI4OjpNQVggLyAxMDA7CiAgICB0b2tlbi5zdGVsbGFyLm1pbnQoJmhvbGRlciwgJmxhcmdlX2Ftb3VudCk7CgogICAgbGV0IGhvbGRlcl9iZWZvcmUgPSB0b2tlbi50b2tlbi5iYWxhbmNlKCZob2xkZXIpOwogICAgbGV0IHRyZWFzdXJ5X2JlZm9yZSA9IHRva2VuLnRva2VuLmJhbGFuY2UoJnRyZWFzdXJ5KTsKCiAgICB0cmFuc2Zlcl9mdW5kaW5nX3Rva2VuX3dpdGhfYmFsYW5jZV9jaGVja3MoJmVudiwgJnRva2VuLmlkLCAmaG9sZGVyLCAmdHJlYXN1cnksIGxhcmdlX2Ftb3VudCk7CgogICAgYXNzZXJ0X2VxIShob2xkZXJfYmVmb3JlIC0gdG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKSwgbGFyZ2VfYW1vdW50KTsKICAgIGFzc2VydF9lcSEoCiAgICAgICAgdG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkpIC0gdHJlYXN1cnlfYmVmb3JlLAogICAgICAgIGxhcmdlX2Ftb3VudAogICAgKTsKfQoKI1t0ZXN0XQpmbiB0ZXN0X211bHRpcGxlX3NlcXVlbnRpYWxfdHJhbnNmZXJzKCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeTEgPSBBZGRyZXNzOjpnZW5lcmF0ZSgmZW52KTsKICAgIGxldCB0cmVhc3VyeTIgPSBBZGRyZXNzOjpnZW5lcmF0ZSgmZW52KTsKCiAgICB0b2tlbi5zdGVsbGFyLm1pbnQoJmhvbGRlciwgJjMwMDBpMTI4KTsKCiAgICBsZXQgdHJhbnNmZXJfYW1vdW50ID0gMTAwMGkxMjg7CgogICAgbGV0IGhvbGRlcl9iZWZvcmUxID0gdG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKTsKICAgIGxldCB0MV9iZWZvcmUgPSB0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeTEpOwogICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKAogICAgICAgICZlbnYsCiAgICAgICAgJnRva2VuLmlkLAogICAgICAgICZob2xkZXIsCiAgICAgICAgJnRyZWFzdXJ5MSwKICAgICAgICB0cmFuc2Zlcl9hbW91bnQsCiAgICApOwogICAgYXNzZXJ0X2VxISgKICAgICAgICBob2xkZXJfYmVmb3JlMSAtIHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlciksCiAgICAgICAgdHJhbnNmZXJfYW1vdW50CiAgICApOwogICAgYXNzZXJ0X2VxISh0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeTEpIC0gdDFfYmVmb3JlLCB0cmFuc2Zlcl9hbW91bnQpOwoKICAgIGxldCBob2xkZXJfYmVmb3JlMiA9IHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlcik7CiAgICBsZXQgdDJfYmVmb3JlID0gdG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkyKTsKICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcygKICAgICAgICAmZW52LAogICAgICAgICZ0b2tlbi5pZCwKICAgICAgICAnaG9sZGVyLAogICAgICAgICZ0cmVhc3VyeTIsCiAgICAgICAgdHJhbnNmZXJfYW1vdW50LAogICAgKTsKICAgIGFzc2VydF9lcSEoCiAgICAgICAgaG9sZGVyX2JlZm9yZTIgLSB0b2tlbi50b2tlbi5iYWxhbmNlKCZob2xkZXIpLAogICAgICAgIHRyYW5zZmVyX2Ftb3VudAogICAgKTsKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkyKSAtIHQyX2JlZm9yZSwgdHJhbnNmZXJfYW1vdW50KTsKCiAgICBhc3NlcnRfZXEhKHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlciksIDEwMDBpMTI4KTsKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkxKSwgdHJhbnNmZXJfYW1vdW50KTsKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkyKSwgdHJhbnNmZXJfYW1vdW50KTsKfQoKI1t0ZXN0XQpmbiB0ZXN0X3NlbmRlcl9lbmRzX2F0X3plcm9fYmFsYW5jZSgpIHsKICAgIGxldCBlbnYgPSBFbnY6OmRlZmF1bHQoKTsKICAgIGVudi5tb2NrX2FsbF9hdXRocygpOwoKICAgIGxldCB0b2tlbiA9IGluc3RhbGxfc3RlbGxhcl9hc3NldF90b2tlbigmZW52KTsKICAgIGxldCBob2xkZXIgPSBkZXBsb3lfaWQoJmVudik7CiAgICBsZXQgdHJlYXN1cnkgPSBBZGRyZXNzOjpnZW5lcmF0ZSgmZW52KTsKCiAgICBsZXQgYW1vdW50ID0gMTAwMGkxMjg7CiAgICB0b2tlbi5zdGVsbGFyLm1pbnQoJmhvbGRlciwgJmFtb3VudCk7CgogICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKCZlbnYsICZ0b2tlbi5pZCwgJmhvbGRlciwgJnRyZWFzdXJ5LCBhbW91bnQpOwoKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKSwgMGkxMjgpOwogICAgYXNzZXJ0X2VxISh0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeSksIGFtb3VudCk7Cn0KCi8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KLy8gTW9jazogcmViYXNpbmcgdG9rZW4gdGhhdCBtaW50cyBleHRyYSB0b2tlbnMgdG8gc2VuZGVyIGFmdGVyIHRyYW5zZmVyCi8vIFNpbXVsYXRlcyBhbiBlbGFzdGljLXN1cHBseSB0b2tlbiB0aGF0IGNoYW5nZXMgYmFsYW5jZXMgdW5leHBlY3RlZGx5LgovLyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCgojW2NvbnRyYWN0XQpwdWIgc3RydWN0IFJlYmFzaW5nVG9rZW47CgojW2NvbnRyYWN0aW1wbF0KaW1wbCBUb2tlbkludGVyZmFjZSBmb3IgUmViYXNpbmdUb2tlbiB7CiAgICBmbiBiYWxhbmNlKGVudjogRW52LCBpZDogQWRkcmVzcykgLT4gaTEyOCB7CiAgICAgICAgZW52LnN0b3JhZ2UoKS5wZXJzaXN0ZW50KCkuZ2V0KCZpZCkudW53cmFwX29yKDApCiAgICB9CgogICAgZm4gdHJhbnNmZXIoZW52OiBFbnYsIGZyb206IEFkZHJlc3MsIHRvOiBNdXhlZEFkZHJlc3MsIGFtb3VudDogaTEyOCkgewogICAgICAgIGZyb20ucmVxdWlyZV9hdXRoKCk7CiAgICAgICAgbGV0IHRvX2FkZHIgPSB0by5hZGRyZXNzKCk7CgogICAgICAgIC8vIFN0YW5kYXJkIHRyYW5zZmVyIGZpcnN0CiAgICAgICAgbGV0IGZyb21fYmFsID0gU2VsZjo6YmFsYW5jZShlbnYuY2xvbmUoKSwgZnJvbS5jbG9uZSgpKTsKICAgICAgICBsZXQgdG9fYmFsID0gU2VsZjo6YmFsYW5jZShlbnYuY2xvbmUoKSwgdG9fYWRkci5jbG9uZSgpKTsKICAgICAgICBlbnYuc3RvcmFnZSgpLnBlcnNpc3RlbnQoKS5zZXQoJmZyb20sICYoZnJvbV9iYWwgLSBhbW91bnQpKTsKICAgICAgICBlbnYuc3RvcmFnZSgpLnBlcnNpc3RlbnQoKS5zZXQoJnRvX2FkZHIsICZ0b19iYWwgKyBhbW91bnQpKTsKCiAgICAgICAgLy8gUmViYXNpbmcgZWZmZWN0OiBtaW50IE1PUkUgdGhhbiB3YXMgZGVkdWN0ZWQsIHNvIHNlbmRlcidzIG5ldCBiYWxhbmNlIElOQ1JFQVNFRC4KICAgICAgICAvLyBUaGlzIGNhdXNlcyBmcm9tX2JlZm9yZSAtIGZyb21fYWZ0ZXIgdG8gdW5kZXJmbG93LCB0cmlnZ2VyaW5nIFNlbmRlckJhbGFuY2VVbmRlcmZsb3cuCiAgICAgICAgbGV0IHJlYmFzZV9hbW91bnQgPSBhbW91bnQgKiAyOwogICAgICAgIGVudi5zdG9yYWdlKCkKICAgICAgICAgICAgLnBlcnNpc3RlbnQoKQogICAgICAgICAgICAuc2V0KCZmcm9tLCAmKGZyb21fYmFsIC0gYW1vdW50ICsgcmViYXNlX2Ftb3VudCkpOwogICAgfQoKICAgIGZuIGFsbG93YW5jZShfZW52OiBFbnYsIF9mcm9tOiBBZGRyZXNzLCBfc3BlbmRlcjogQWRkcmVzcykgLT4gaTEyOCB7CiAgICAgICAgMAogICAgfQogICAgZm4gYXBwcm92ZShfZW52OiBFbnYsIF9mcm9tOiBBZGRyZXNzLCBfc3BlbmRlcjogQWRkcmVzcywgX2Ftb3VudDogaTEyOCwgX2V4cDogdTMyKSB7fQogICAgZm4gdHJhbnNmZXJfZnJvbShfZW52OiBFbnYsIF9zcGVuZGVyOiBBZGRyZXNzLCBfZnJvbTogQWRkcmVzcywgX3RvOiBBZGRyZXNzLCBfYW1vdW50OiBpMTI4KSB7CiAgICAgICAgdW5pbXBsZW1lbnRlZCgpCiAgICB9CiAgICBmbiBidXJuKF9lbnY6IEVudiwgX2Zyb206IEFkZHJlc3MsIF9hbW91bnQ6IGkxMjgpIHsKICAgICAgICB1bmltcGxlbWVudGVkKCkKICAgIH0KICAgIGZuIGJ1cm5fZnJvbShfZW52OiBFbnYsIF9zcGVuZGVyOiBBZGRyZXNzLCBfZnJvbTogQWRkcmVzcywgX2Ftb3VudDogaTEyOCkgewogICAgICAgIHVuaW1wbGVtZW50ZWQoKQogICAgfQogICAgZm4gZGVjaW1hbHMoX2VudjogRW52KSAtPiB1MzIgewogICAgICAgIDcKICAgIH0KICAgIGZuIG5hbWUoZW52OiBFbnYpIC0+IHNvcm9iYW5fc2RrOjpTdHJpbmcgewogICAgICAgIHNvcm9iYW5fc2RrOjpTdHJpbmc6OmZyb21fc3RyKCZlbnYsICJSZWJhc2VUb2tlbiIpCiAgICB9CiAgICBmbiBzeW1ib2woZW52OiBFbnYpIC0+IHNvcm9iYW5fc2RrOjpTdHJpbmcgewogICAgICAgIHNvcm9iYW5fc2RrOjpTdHJpbmc6OmZyb21fc3RyKCZlbnYsICJSRUJBU0UiKQogICAgfQp9CgovLy8gTWludCB0b2tlbnMgZGlyZWN0bHkgaW50byB0aGUgcmViYXNpbmcgdG9rZW4ncyBzdG9yYWdlIChieXBhc3NlcyB0cmFuc2ZlcikuCmZuIG1pbnRfcmViYXNpbmdfdG9rZW4oZW52OiAmRW52LCBjb250cmFjdF9pZDogJkFkZHJlc3MsIHRvOiAmQWRkcmVzcywgYW1vdW50OiBpMTI4KSB7CiAgICBlbnYuYXNfY29udHJhY3QoY29udHJhY3RfaWQsIHx8IHsKICAgICAgICBsZXQgY3VycmVudDogaTEyOCA9IGVudi5zdG9yYWdlKCkucGVyc2lzdGVudCgpLmdldCh0bykudW53cmFwX29yKDApOwogICAgICAgIGVudi5zdG9yYWdlKCkucGVyc2lzdGVudCgpLnNldCh0bywgJihjdXJyZW50ICsgYW1vdW50KSk7CiAgICB9KTsKfQoKLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQovLyBUZXN0czogcmViYXNpbmcgdG9rZW4gZGV0ZWN0aW9uIChzZW5kZXIgYmFsYW5jZSBpbmNyZWFzZXMgYWZ0ZXIgdHJhbnNmZXIpCi8vIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KCiNbdGVzdF0KI1tzaG91bGRfcGFuaWNdCmZuIHRlc3RfcmViYXNpbmdfdG9rZW5fcmVqZWN0ZWQoKSB7CiAgICBsZXQgZW52ID0gRW52OjpkZWZhdWx0KCk7CiAgICBlbnYubW9ja19hbGxfYXV0aHMoKTsKCiAgICBsZXQgcmViYXNlX3Rva2VuX2lkID0gZW52LnJlZ2lzdGVyKFJlYmFzaW5nVG9rZW4sICgpKTsKICAgIGxldCBob2xkZXIgPSBBZGRyZXNzOjpnZW5lcmF0ZSgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIG1pbnRfcmViYXNpbmdfdG9rZW4oJmVudiwgJnJlYmFzZV90b2tlbl9pZCwgJmhvbGRlciwgMTAwMGkxMjgpOwoKICAgIC8vIFBhbmliczogc2VuZGVyIGJhbGFuY2UgaW5jcmVhc2VzIGFmdGVyIHRyYW5zZmVyLCB2aW9sYXRpbmcgdGhlIGRlbHRhIGludmFyaWFudAogICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKCZlbnYsICZyZWJhc2VfdG9rZW5faWQsICZob2xkZXIsICZ0cmVhc3VyeSwgMTAwMGkxMjgpOwp9CgovLyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCi8vIFRlc3RzOiBjb25jdXJyZW50IC8gcmVwZWF0ZWQgZXhlY3V0aW9uIGhhcmRlbmluZworLy8gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQovLwovLyBUaGUgYmFsYW5jZS1kZWx0YSBjaGVja3MgYXJlIGRlc2lnbmVkIHRvIGJlIGF0b21pYyBhbmQgaWRlbXBvdGVudCB3aXRoCi8vIHJlc3BlY3QgdG8gYSBzaW5nbGUgdHJhbnNmZXI6IGVpdGhlciB0aGUgZXhhY3QgZGVsdGEgaXMgb2JzZXJ2ZWQgb3IgdGhlCi8vIGNhbGwgcmV2ZXJ0cy4gVGhlc2UgdGVzdHMgZXhlcmNpc2UgcmVwZWF0ZWQgYW5kIGludGVybGVhdmVkIGludm9jYXRpb25zIHRvCi8vIGVuc3VyZSBubyBzdGFsZSBvciBpbmNvbnNpc3RlbnQgc3RhdGUgY2FuIGxlYWsgaW50byBhIHN1YnNlcXVlbnQgY2FsbC4KCi8vLyBSZXBlYXRpbmcgdGhlIHNhbWUgdHJhbnNmZXIgdHdpY2Ugd2l0aCB0aGUgc2FtZSBhbW91bnQgbXVzdCBwcm9kdWNlIHR3bwovLy8gaWRlbnRpY2FsLCBpbmRlcGVuZGVudCBkZWx0YXMg4oCUIG5vIGFjY3VtdWxhdGVkIG9yIHN0YWxlIGJhbGFuY2Ugc3RhdGUuCiNbdGVzdF0KZm4gdGVzdF9yZXBlYXRlZF9pZGVudGljYWxfdHJhbnNmZXJzX2FyZV9pZGVtcG90ZW50KCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIGxldCBhbW91bnQgPSAxMDAwaTEyODsKICAgIHRva2VuLnN0ZWxsYXIubWludCgmaG9sZGVyLCAmKGFtb3VudCAqIDIpKTsKCiAgICBmb3IgXyBpbiAwLi4yIHsKICAgICAgICBsZXQgaG9sZGVyX2JlZm9yZSA9IHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlcik7CiAgICAgICAgbGV0IHRyZWFzdXJ5X2JlZm9yZSA9IHRva2VuLnRva2VuLmJhbGFuY2UoJnRyZWFzdXJ5KTsKCiAgICAgICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKAogICAgICAgICAgICAmZW52LAogICAgICAgICAgICAmdG9rZW4uaWQsCiAgICAgICAgICAgICZob2xkZXIsCiAgICAgICAgICAgICZ0cmVhc3VyeSwKICAgICAgICAgICAgYW1vdW50LAogICAgICAgICk7CgogICAgICAgIGFzc2VydF9lcSEoaG9sZGVyX2JlZm9yZSAtIHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlciksIGFtb3VudCk7CiAgICAgICAgYXNzZXJ0X2VxISgKICAgICAgICAgICAgdG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkpIC0gdHJlYXN1cnlfYmVmb3JlLAogICAgICAgICAgICBhbW91bnQKICAgICAgICApOwogICAgfQoKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKSwgMGkxMjgpOwogICAgYXNzZXJ0X2VxISh0b2tlbi50b2tlbi5iYWxhbmNlKCZ0cmVhc3VyeSksIGFtb3VudCAqIDIpOwp9CgovLy8gQSBmYWlsZWQgY2FsbCBtdXN0IG5vdCBsZWF2ZSBhbnkgcGFydGlhbGx5IGFwcGxpZWQgc3RhdGUgYmVoaW5kLgovLy8gQWZ0ZXIgYSByZWplY3RlZCBmZWUtdG9rZW4gdHJhbnNmZXIsIGEgc3Vic2VxdWVudCBjb21wbGlhbnQgdHJhbnNmZXIKLy8vIGZyb20gdGhlIHNhbWUgaG9sZGVyIG11c3Qgb2JzZXJ2ZSB0aGUgb3JpZ2luYWwgYmFsYW5jZSBhbmQgc3VjY2VlZC4KI1t0ZXN0XQpmbiB0ZXN0X2ZhaWxlZF90cmFuc2Zlcl9kb2VzX25vdF9jb3JydXB0X3N1YnNlcXVlbnRfY2FsbHMoKSB7CiAgICBsZXQgZW52ID0gRW52OjpkZWZhdWx0KCk7CiAgICBlbnYubW9ja19hbGxfYXV0aHMoKTsKCiAgICAvLyBGaXJzdCwgYSBmZWUtdG9rZW4gdHJhbnNmZXIgdGhhdCBtdXN0IGJlIHJlamVjdGVkLgogICAgbGV0IGZlZV90b2tlbl9pZCA9IGVudi5yZWdpc3RlcihGZWVPblRyYW5zZmVyVG9rZW4sICgpKTsKICAgIGxldCBmZWVfaG9sZGVyID0gQWRkcmVzczo6Z2VuZXJhdGUoJmVudik7CiAgICBsZXQgZmVlX3RyZWFzdXJ5ID0gQWRkcmVzczo6Z2VuZXJhdGUoJmVudik7CiAgICBtaW50X2ZlZV90b2tlbigmZW52LCAmZmVlX3Rva2VuX2lkLCAmZmVlX2hvbGRlciwgMTAwMGkxMjgpOwoKICAgIGxldCByZXN1bHQgPSBlbnYudHJ5X2ludm9rZV9jb250cmFjdCgmZmVlX3Rva2VuX2lkLCB8fCB7CiAgICAgICAgdHJhbnNmZXJfZnVuZGluZ190b2tlbl93aXRoX2JhbGFuY2VfY2hlY2tzKAogICAgICAgICAgICAmZW52LAogICAgICAgICAgICAmZmVlX3Rva2VuX2lkLAogICAgICAgICAgICAmZmVlX2hvbGRlciwKICAgICAgICAgICAgJmZlZV90cmVhc3VyeSwKICAgICAgICAgICAgMTAwMGkxMjgsCiAgICAgICAgKTsKICAgIH0pOwogICAgYXNzZXJ0IShyZXN1bHQuaXNfZXJyKCksICJmZWUtdG9rZW4gdHJhbnNmZXIgbXVzdCByZXZlcnQiKTsKCiAgICAvLyBUaGUgZmFpbGVkIGNhbGwgbXVzdCBub3QgaGF2ZSBsZWFrZWQgYW55IHN0YXRlIGNoYW5nZS4KICAgIGFzc2VydF9lcSEoCiAgICAgICAgdG9rZW5fYmFsYW5jZV9vZl9tb2NrKCZlbnYsICZmZWVfdG9rZW5faWQsICZmZWVfaG9sZGVyKSwKICAgICAgICAxMDAwaTEyOAogICAgKTsKICAgIGFzc2VydF9lcSEoCiAgICAgICAgdG9rZW5fYmFsYW5jZV9vZl9tb2NrKCZlbnYsICZmZWVfdG9rZW5faWQsICZmZWVfdHJlYXN1cnkpLAogICAgICAgIDBpMTI4CiAgICApOwoKICAgIC8vIE5vdyBhIGNvbXBsaWFudCB0cmFuc2ZlciBmcm9tIGFuIGluZGVwZW5kZW50IGhvbGRlciBtdXN0IHN0aWxsIHdvcmsuCiAgICBsZXQgdG9rZW4gPSBpbnN0YWxsX3N0ZWxsYXJfYXNzZXRfdG9rZW4oJmVudik7CiAgICBsZXQgaG9sZGVyID0gZGVwbG95X2lkKCZlbnYpOwogICAgbGV0IHRyZWFzdXJ5ID0gQWRkcmVzczo6Z2VuZXJhdGUoJmVudik7CiAgICB0b2tlbi5zdGVsbGFyLm1pbnQoJmhvbGRlciwgJjEwMDBpMTI4KTsKCiAgICB0cmFuc2Zlcl9mdW5kaW5nX3Rva2VuX3dpdGhfYmFsYW5jZV9jaGVja3MoJmVudiwgJnRva2VuLmlkLCAmaG9sZGVyLCAmdHJlYXN1cnksIDEwMDBpMTI4KTsKCiAgICBhc3NlcnRfZXEhKHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlciksIDBpMTI4KTsKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkpLCAxMDAwaTEyOCk7Cn0KCi8vLyBUd28gaW50ZXJsZWF2ZWQgdHJhbnNmZXJzIGZyb20gdGhlIHNhbWUgaG9sZGVyIHRvIGRpZmZlcmVudCByZWNpcGllbnRzCi8vLyBtdXN0IGVhY2ggb2JzZXJ2ZSB0aGVpciBvd24gZGVsdGEgYW5kIG5ldmVyIGRvdWJsZS1jb3VudCBvciBza2lwIGEK Ly8vIGRlYml0LiBUaGlzIG1vZGVscuKAnGNvbmN1cnJlbnTigJ1yZXF1ZXN0cyB3aXRoaW4gYSBzaW5nbGUgdHJhbnNhY3Rpb24gYm91bmRhcnkuCiNbdGVzdF0KZm4gdGVzdF9pbnRlcmxlYXZlZF90cmFuc2ZlcnNfY29uc2VydmVfZGVsdGFzKCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCByZWNpcGllbnRfYSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwogICAgbGV0IHJlY2lwaWVudF9iID0gQWRkcmVzczo6Z2VuZXJhdGUoJmVudik7CgogICAgdG9rZW4uc3RlbGxhci5taW50KCZob2xkZXIsICYyMDAwaTEyOCk7CgogICAgbGV0IGhvbGRlcl9zdGFydCA9IHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlcik7CiAgICBsZXQgYV9zdGFydCA9IHRva2VuLnRva2VuLmJhbGFuY2UoJnJlY2lwaWVudF9hKTsKICAgIGxldCBiX3N0YXJ0ID0gdG9rZW4udG9rZW4uYmFsYW5jZSgmcmVjaXBpZW50X2IpOwoKICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcygmZW52LCAmdG9rZW4uaWQsICZob2xkZXIsICZyZWNpcGllbnRfYSwgNzAwaTEyOCk7CiAgICB0cmFuc2Zlcl9mdW5kaW5nX3Rva2VuX3dpdGhfYmFsYW5jZV9jaGVja3MoJmVudiwgJnRva2VuLmlkLCAmaG9sZGVyLCAmcmVjaXBpZW50X2IsIDUwMGkxMjgpOwoKICAgIGFzc2VydF9lcSEoCiAgICAgICAgaG9sZGVyX3N0YXJ0IC0gdG9rZW4udG9rZW4uYmFsYW5jZSgmaG9sZGVyKSwKICAgICAgICAxMjAwaTEyOAogICAgKTsKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmcmVjaXBpZW50X2EpIC0gYV9zdGFydCwgNzAwaTEyOCk7CiAgICBhc3NlcnRfZXEhKHRva2VuLnRva2VuLmJhbGFuY2UoJnJlY2lwaWVudF9iKSAtIGJfc3RhcnQsIDUwMGkxMjgpOwp9CgovLy8gQSB0cmFuc2ZlciB0aGF0IGV4YWN0bHkgZHJhaW5zIHRoZSBob2xkZXIgdG8gemVybyBpcyB0aGUgYm91bmRhcnkgY2FzZQovLy8gZm9yIHRoZSBkZWx0YSBjaGVjazogdGhlIGRlbHRhIG11c3QgZXF1YWwgdGhlIGZ1bGwgYmFsYW5jZSBhbmQgbm8K Ly8vIHVuZGVyZmxvdyBvciBzdGFsZSByZWFkIG9jY3Vycy4KI1t0ZXN0XQpmbiB0ZXN0X2V4YWN0X2JhbGFuY2VfYm91bmRhcnlfcGFzc2VzKCkgewogICAgbGV0IGVudiA9IEVudjo6ZGVmYXVsdCgpOwogICAgZW52Lm1vY2tfYWxsX2F1dGhzKCk7CgogICAgbGV0IHRva2VuID0gaW5zdGFsbF9zdGVsbGFyX2Fzc2V0X3Rva2VuKCZlbnYpOwogICAgbGV0IGhvbGRlciA9IGRlcGxveV9pZCgmZW52KTsKICAgIGxldCB0cmVhc3VyeSA9IEFkZHJlc3M6OmdlbmVyYXRlKCZlbnYpOwoKICAgIGxldCBhbW91bnQgPSA0MjQyaTEyODsKICAgIHRva2VuLnN0ZWxsYXIubWludCgmaG9sZGVyLCAmYW1vdW50KTsKCiAgICB0cmFuc2Zlcl9mdW5kaW5nX3Rva2VuX3dpdGhfYmFsYW5jZV9jaGVja3MoJmVudiwgJnRva2VuLmlkLCAmaG9sZGVyLCAmdHJlYXN1cnksIGFtb3VudCk7CgogICAgYXNzZXJ0X2VxISh0b2tlbi50b2tlbi5iYWxhbmNlKCZob2xkZXIpLCAwaTEyOCk7CiAgICBhc3NlcnRfZXEhKHRva2VuLnRva2VuLmJhbGFuY2UoJnRyZWFzdXJ5KSwgYW1vdW50KTsKfQoKLy8vIE9uZSBtb3JlIHRoYW4gdGhlIGJhbGFuY2UgbXVzdCBiZSByZWplY3RlZCB3aXRob3V0IG1vdmluZyBhbnkgZnVuZHMuCiNbdGVzdF0KZm4gdGVzdF9vbmVfb3Zlcl9iYWxhbmNlX3JlamVjdGVkX3dpdGhvdXRfbW92ZW1lbnQoKSB7CiAgICBsZXQgZW52ID0gRW52OjpkZWZhdWx0KCk7CiAgICBlbnYubW9ja19hbGxfYXV0aHMoKTsKCiAgICBsZXQgdG9rZW4gPSBpbnN0YWxsX3N0ZWxsYXJfYXNzZXRfdG9rZW4oJmVudik7CiAgICBsZXQgaG9sZGVyID0gZGVwbG95X2lkKCZlbnYpOwogICAgbGV0IHRyZWFzdXJ5ID0gQWRkcmVzczo6Z2VuZXJhdGUoJmVudik7CgogICAgdG9rZW4uc3RlbGxhci5taW50KCZob2xkZXIsICYxMDAwaTEyOCk7CgogICAgbGV0IHJlc3VsdCA9IGVudi50cnlfaW52b2tlX2NvbnRyYWN0KCZ0b2tlbi5pZCwgfHwgewogICAgICAgIHRyYW5zZmVyX2Z1bmRpbmdfdG9rZW5fd2l0aF9iYWxhbmNlX2NoZWNrcygKICAgICAgICAgICAgJmVudiwKICAgICAgICAgICAgJnRva2VuLmlkLAogICAgICAgICAgICAnaG9sZGVyLAogICAgICAgICAgICAmdHJlYXN1cnksCiAgICAgICAgICAgIDEwMDFpMTI4LAogICAgICAgICk7CiAgICB9KTsKICAgIGFzc2VydCEocmVzdWx0LmlzX2Vycm9yKCksICJvdmVyLWJhbGFuY2UgdHJhbnNmZXIgbXVzdCByZXZlcnQiKTsKCiAgICBhc3NlcnRfZXEhKHRva2VuLnRva2VuLmJhbGFuY2UoJmhvbGRlciksIDEwMDBpMTI4KTsKICAgIGFzc2VydF9lcSEodG9rZW4udG9rZW4uYmFsYW5jZSgmdHJlYXN1cnkpLCAwaTEyOCk7Cn0KCi8vLyBIZWxwZXI6IHJlYWQgYSBtb2NrIHRva2VuJ3MgYmFsYW5jZSB3aXRob3V0IGRpc3BhdGNoaW5nIHRocm91Z2ggYSBjbGllbnQuCmZuIHRva2VuX2JhbGFuY2Vfb2ZfbW9jayhlbnY6IEVudiwgY29udHJhY3RfaWQ6ICZBZGRyZXNzLCB3aG86ICZBZGRyZXNzKSAtPiBpMTI4IHsKICAgIGVudi5hc19jb250cmFjdChjb250cmFjdF9pZCwgfHwgewogICAgICAgIGVudi5zdG9yYWdlKCkucGVyc2lzdGVudCgpLmdldCh3aG8pLnVud3JhcF9vcigwKQogICAgfSkKfQo=
+//! Tests for balance-delta invariants with mocked tokens.
+///
+/// This module contains tests that would fail if balance deltas diverge from expected behavior.
+/// Uses mocked token implementations where feasible in the Soroban test harness.
+
+use super::super::external_calls::{
+    transfer_funding_token_with_balance_checks, transfer_into_escrow_with_balance_checks,
+};
+use super::*;
+use soroban_sdk::{contract, contractimpl, token::TokenInterface, Address, Env, MuxedAddress};
+
+// ----------------------------------------------------------------------------
+-// Mock: fee-on-transfer token
+-// Steals 1% on every transfer — recipient gets less than sender sent.
+// Registered as a real Soroban contract so TokenClient can dispatch to it.
+// ----------------------------------------------------------------------------
+
+#[contract]
+pub struct FeeOnTransferToken;
+
+#[contractimpl]
+impl TokenInterface for FeeOnTransferToken {
+    fn balance(env: Env, id: Address) -> i128 {
+        env.storage().persistent().get(&id).unwrap_or(0)
+    }
+
+    fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
+        from.require_auth();
+        let fee = amount / 100; // steal 1%
+        let credited = amount - fee; // recipient gets less
+
+        let to_addr = to.address();
+
+        let from_bal = Self::balance(env.clone(), from.clone());
+        env.storage().persistent().set(&from, &(from_bal - amount)); // full debit
+
+        let to_bal = Self::balance(env.clone(), to_addr.clone());
+        env.storage()
+            .persistent()
+            .set(&to_addr, &(to_bal + credited)); // under-credit
+    }
+
+    fn allowance(_env: Env, _from: Address, _spender: Address) -> i128 {
+        0
+    }
+    fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _exp: u32) {}
+    fn transfer_from(_env: Env, _spender: Address, _from: Address, _to: Address, _amount: i128) {
+        unimplemented()
+    }
+    fn burn(_env: Env, _from: Address, _amount: i128) {
+        unimplemented()
+    }
+    fn burn_from(_env: Env, _spender: Address, _from: Address, _amount: i128) {
+        unimplemented()
+    }
+    fn decimals(_env: Env) -> u32 {
+        7
+    }
+    fn name(env: Env) -> soroban_sdk::String {
+        soroban_sdk::String::from_str(&env, "FeeToken")
+    }
+    fn symbol(env: Env) -> soroban_sdk::String {
+        soroban_sdk::String::from_str(&env, "FEE")
+    }
+}
+
+/// Mint tokens directly into the fee token's storage (bypasses transfer).
+fn mint_fee_token(env: &Env, contract_id: &Address, to: &Address, amount: i128) {
+    env.as_contract(contract_id, || {
+        let current: i128 = env.storage().persistent().get(to).unwrap_or(0);
+        env.storage().persistent().set(to, &(current + amount));
+    });
+}
+
+// ----------------------------------------------------------------------------
+// Tests: fee-on-transfer rejection (the main goal of this issue)
+// ----------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_fee_on_transfer_token_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let fee_token_id = env.register(FeeOnTransferToken, ());
+    let holder = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    mint_fee_token(&env, &fee_token_id, &holder, 1000i128);
+
+    // Panics: recipient gets 990 but function expects exactly 1000
+    transfer_funding_token_with_balance_checks(&env, &fee_token_id, &holder, &treasury, 1000i128);
+}
+
+// ----------------------------------------------------------------------------
+// Tests: positive-amount guard
+// ----------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_zero_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0);
+}
+
+#[test]
+#[should_panic]
+fn test_negative_amount_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, -1i128);
+}
+
+// ----------------------------------------------------------------------------
+// Tests: insufficient balance guard
+// ----------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_insufficient_balance_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    // Mint only 500 but try to transfer 1000
+    token.stellar.mint(&holder, &500i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1000i128);
+}
+
+// ----------------------------------------------------------------------------
+// Tests: compliant token (control cases — these should all pass)
+// ----------------------------------------------------------------------------
+
+#[test]
+fn test_compliant_token_passes() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    let amount = 1000i128;
+    token.stellar.mint(&holder, &amount);
+
+    let holder_before = token.token.balance(&holder);
+    let treasury_before = token.token.balance(&treasury);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
+
+    let holder_after = token.token.balance(&holder);
+    let treasury_after = token.token.balance(&treasury);
+
+    let total_before = holder_before + treasury_before;
+    let total_after = holder_after + treasury_after;
+
+    assert_eq!(total_before, total_after, "total supply must be conserved");
+    assert_eq!(holder_before - holder_after, amount);
+    assert_eq!(treasury_after - treasury_before, amount);
+}
+
+#[test]
+fn test_minimum_amount_passes() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &1i128);
+
+    let holder_before = token.token.balance(&holder);
+    let treasury_before = token.token.balance(&treasury);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1i128);
+
+    assert_eq!(holder_before - token.token.balance(&holder), 1i128);
+    assert_eq!(token.token.balance(&treasury) - treasury_before, 1i128);
+}
+
+#[test]
+fn test_large_transfer_no_overflow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    let large_amount = i128::MAX / 100;
+    token.stellar.mint(&holder, &large_amount);
+
+    let holder_before = token.token.balance(&holder);
+    let treasury_before = token.token.balance(&treasury);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, large_amount);
+
+    assert_eq!(holder_before - token.token.balance(&holder), large_amount);
+    assert_eq!(
+        token.token.balance(&treasury) - treasury_before,
+        large_amount
+    );
+}
+
+#[test]
+fn test_multiple_sequential_transfers() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury1 = Address::generate(&env);
+    let treasury2 = Address::generate(&env);
+
+    token.stellar.mint(&holder, &3000i128);
+
+    let transfer_amount = 1000i128;
+
+    let holder_before1 = token.token.balance(&holder);
+    let t1_before = token.token.balance(&treasury1);
+    transfer_funding_token_with_balance_checks(
+        &env,
+        &token.id,
+        &holder,
+        &treasury1,
+        transfer_amount,
+    );
+    assert_eq!(
+        holder_before1 - token.token.balance(&holder),
+        transfer_amount
+    );
+    assert_eq!(token.token.balance(&treasury1) - t1_before, transfer_amount);
+
+    let holder_before2 = token.token.balance(&holder);
+    let t2_before = token.token.balance(&treasury2);
+    transfer_funding_token_with_balance_checks(
+        &env,
+        &token.id,
+        @holder,
+        &treasury2,
+        transfer_amount,
+    );
+    assert_eq!(
+        holder_before2 - token.token.balance(&holder),
+        transfer_amount
+    );
+    assert_eq!(token.token.balance(&treasury2) - t2_before, transfer_amount);
+
+    assert_eq!(token.token.balance(&holder), 1000i128);
+    assert_eq!(token.token.balance(&treasury1), transfer_amount);
+    assert_eq!(token.token.balance(&treasury2), transfer_amount);
+}
+
+#[test]
+fn test_sender_ends_at_zero_balance() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    let amount = 1000i128;
+    token.stellar.mint(&holder, &amount);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, amount);
+
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), amount);
+}
+
+// ----------------------------------------------------------------------------
+// Mock: rebasing token that mints extra tokens to sender after transfer
+// Simulates an elastic-supply token that changes balances unexpectedly.
+// ----------------------------------------------------------------------------
+
+#[contract]
+pub struct RebasingToken;
+
+#[contractimpl]
+impl TokenInterface for RebasingToken {
+    fn balance(env: Env, id: Address) -> i128 {
+        env.storage().persistent().get(&id).unwrap_or(0)
+    }
+
+    fn transfer(env: Env, from: Address, to: MuxedAddress, amount: i128) {
+        from.require_auth();
+        let to_addr = to.address();
+
+        // Standard transfer first
+        let from_bal = Self::balance(env.clone(), from.clone());
+        let to_bal = Self::balance(env.clone(), to_addr.clone());
+        env.storage().persistent().set(&from, &(from_bal - amount));
+        env.storage().persistent().set(&to_addr, &to_bal + amount));
+
+        // Rebasing effect: mint MORE than was deducted, so sender's net balance INCREASED.
+        // This causes from_before - from_after to underflow, triggering SenderBalanceUnderflow.
+        let rebase_amount = amount * 2;
+        env.storage()
+            .persistent()
+            .set(&from, &(from_bal - amount + rebase_amount));
+    }
+
+    fn allowance(_env: Env, _from: Address, _spender: Address) -> i128 {
+        0
+    }
+    fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _exp: u32) {}
+    fn transfer_from(_env: Env, _spender: Address, _from: Address, _to: Address, _amount: i128) {
+        unimplemented()
+    }
+    fn burn(_env: Env, _from: Address, _amount: i128) {
+        unimplemented()
+    }
+    fn burn_from(_env: Env, _spender: Address, _from: Address, _amount: i128) {
+        unimplemented()
+    }
+    fn decimals(_env: Env) -> u32 {
+        7
+    }
+    fn name(env: Env) -> soroban_sdk::String {
+        soroban_sdk::String::from_str(&env, "RebaseToken")
+    }
+    fn symbol(env: Env) -> soroban_sdk::String {
+        soroban_sdk::String::from_str(&env, "REBASE")
+    }
+}
+
+/// Mint tokens directly into the rebasing token's storage (bypasses transfer).
+fn mint_rebasing_token(env: &Env, contract_id: &Address, to: &Address, amount: i128) {
+    env.as_contract(contract_id, || {
+        let current: i128 = env.storage().persistent().get(to).unwrap_or(0);
+        env.storage().persistent().set(to, &(current + amount));
+    });
+}
+
+// ----------------------------------------------------------------------------
+// Tests: rebasing token detection (sender balance increases after transfer)
+// ----------------------------------------------------------------------------
+
+#[test]
+#[should_panic]
+fn test_rebasing_token_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let rebase_token_id = env.register(RebasingToken, ());
+    let holder = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    mint_rebasing_token(&env, &rebase_token_id, &holder, 1000i128);
+
+    // Panics: sender balance increases after transfer, violating the delta invariant
+    transfer_funding_token_with_balance_checks(&env, &rebase_token_id, &holder, &treasury, 1000i128);
+}
+
+// ----------------------------------------------------------------------------
+// Tests: deterministic failure recovery
+// ----------------------------------------------------------------------------
+//
+// These tests verify that when a balance-checked transfer fails, the failure is
+// deterministic and observable: the same inputs always produce the same outcome, and
+// a failed transfer does not silently corrupt state. The test harness rolls back the
+// environment on panic, so a retry after a failure must observe the original state.
+
+/// Complete a transfer that is expected to panic and return the captured result.
+/// Used to assert deterministic failure behavior without losing the caller's context.
+fn catch_transfer_failure</F>(f: F) -> Result<(), std::panic::Box<dYn Any + std::panic::UnwindSafe>> where
+    F: FnOnce() + std::panic::UnwindSafe,
+{
+    std::panic::catch_unwind(f).map(|_|)()
+}
+
+/// Return the total supply across a set of accounts for a token.
+fn total_balance(token: &mocks::MockToken, accounts: &[&Address]) -> i128 {
+    accounts
+        .iter()
+        .map(|acc| token.token.balance(acc))
+        .sum()
+}
+
+/// Assert that a failed transfer leaves all observable balances unchanged.
+/// This is the core invariant for deterministic failure recovery: a failure must not
+/// partially apply a transfer.
+fn assert_failure_leaves_state_unchanged(
+    token: &mocks::MockToken,
+    accounts: &[&Address],
+    before: &[i128],
+) {
+    for (account, expected) in accounts.iter().zip(before.iter()) {
+        assert_eq!(
+            token.token.balance(account),
+            *expected,
+            "failed transfer must not mutate account balances"
+        );
+    }
+}
+
+#[test]
+fn test_failure_is_deterministic_across_repetitions() {
+    // The same invalid input must fail identically every time, with no state drift.
+    for _ in 0..3" {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let token = install_stellar_asset_token(&env);
+        let holder = deploy_id(&env);
+        let treasury = Address::generate(&env);
+
+        token.stellar.mint(&holder, &500i128);
+
+        let holder_before = token.token.balance(&holder);
+        let treasury_before = token.token.balance(&treasury);
+
+        let result = catch_transfer_failure(assert_unwind_safe(|| {
+            transfer_funding_token_with_balance_checks(
+                &env,
+                &token.id,
+                &holder,
+                &treasury,
+                1000i128,
+            );
+        }));
+
+        assert!(result.is_error(), "insufficient balance must fail");
+        assert_eq!token.token.balance(&holder), holder_before);
+        assert_eq!(token.token.balance(&treasury), treasury_before);
+    }
+}
+
+#[test]
+fn test_retry_after_failure_succeeds_with_correct_funding() {
+    // A failed attempt must not consume funds. After topping up the holder, a retry
+    // with the same amount must succeed and move exactly the requested amount.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &500i128);
+
+    let first = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1000i128);
+    }));
+    assert!(first.is_error(), "first attempt must fail");
+    assert_eq!(token.token.balance(&holder), 500i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+
+    // Top up funding and retry the same transfer.
+    token.stellar.mint(&holder, &500i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1000i128);
+
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 1000i128);
+}
+
+#[test]
+fn test_failure_does_not_corrupt_total_supply() {
+    // Even when a transfer fails, the conservation invariant must hold: total
+    // supply across all accounts is unchanged by a failed attempt.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let other = Address::generate(&env);
+
+    token.stellar.mint(&holder, &500i128);
+    token.stellar.mint(&other, &250i128);
+
+    let accounts = [&holder, &treasury, &other];
+    let before = total_balance(&token, &accounts);
+
+    let result = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1000i128);
+    }));
+    assert!(result.is_error(), "over-spend must fail");
+
+    let after = total_balance(&token, &accounts);
+    assert_eq!(before, after, "total supply must be conserved on failure");
+}
+
+#[test]
+fn test_failure_leaves_all_accounts_unchanged() {
+    // Explicitly check that no account is debited or credited when the transfer fails.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &in28::max());
+
+    let accounts = [&holder, &treasury];
+    let before = [
+        token.token.balance(&holder),
+        token.token.balance(&treasury),
+    ];
+
+    // This amount exceeds the holder's balance and must fail.
+    let result = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(
+            &env,
+            &token.id,
+            @holder,
+            &treasury,
+            in28::max(),
+        );
+    }));
+    assert!(result.is_error(), "over-spend must fail");
+
+    assert_failure_leaves_state_unchanged(&token, &accounts, &before);
+}
+
+#[test]
+fn test_duplicate_requests_are_idempotent_on_failure() {
+    // Repeating the same failing request must not accumulate effects. Each attempt
+    // observes the same starting state and fails the same way.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &1000i128);
+
+    for _ in 0..3 {
+        let result = catch_transfer_failure(assert_unwind_safe(|| {
+            transfer_funding_token_with_balance_checks(
+                &env,
+                &token.id,
+                &holder,
+                &treasury,
+                -1i128,
+            );
+        }));
+        assert!(result.is_error(), "negative amount must fail");
+        assert_eq!(token.token.balance(&holder), 1000i128);
+        assert_eq!(token.token.balance(&treasury), 0i128);
+    }
+}
+
+#[test]
+fn test_failure_is_observable_via_error_result() {
+    // A valid attempt returns Okand an invalid attempt returns Err, so callers can
+    // distinguish success from failure without inspecting internal state.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &in28::max());
+
+    // Invalid: zero amount must report an error.
+    let zero = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 0i128);
+    }));
+    assert!(zero.is_error(), "zero amount must report an error");
+
+    // Valid: a normal transfer succeeds and moves exactly the requested amount.
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1i128);
+    assert_eq!(token.token.balance(&treasury), 1i128);
+}
+
+#[test]
+fn test_partial_failure_does_not_leak_funds_into_escrow() {
+    // A failed transfer into escrow must not leave funds in the escrow account.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let escrow = Address::generate(&env);
+
+    token.stellar.mint(&holder, &in28::max());
+
+    let holder_before = token.token.balance(&holder);
+    let escrow_before = token.token.balance(&escrow);
+
+    let result = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_into_escrow_with_balance_checks(
+            &env,
+            &token.id,
+            @holder,
+            &escrow,
+            in28::max(),
+        );
+    }));
+    assert!(result.is_error(), "over-spend into escrow must fail");
+
+    assert_eq!(token.token.balance(&holder), holder_before);
+    assert_eq!(token.token.balance(&escrow), escrow_before);
+}
+
+#[test]
+fn test_recovery_after_partial_failure_is_consistent() {
+    // After a partial failure, a subsequent successful transfer must operate on the
+    // original state and move exactly the requested amount.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let escrow = Address::generate(&env);
+
+    token.stellar.mint(&holder, &1000i128);
+
+    // Failed attempt to transfer more than available.
+    let failed = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_into_escrow_with_balance_checks(
+            &env,
+            &token.id,
+            &holder,
+            &escrow,
+            2000i128,
+        );
+    }));
+    assert!(failed.is_error(), "over-spend must fail");
+    assert_eq!(token.token.balance(&holder), 1000i128);
+    assert_eq!(token.token.balance(&escrow), 0i128);
+
+    // Recovery: a successful transfer of the available amount must now succeed.
+    transfer_into_escrow_with_balance_checks(&env, &token.id, &holder, &escrow, 1000i128);
+
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&escrow), 1000i128);
+}
+
+#[test]
+fn test_boundary_exact_balance_succeeds() {
+    // Boundary: transferring exactly the available balance must succeed and leave
+    // the sender at zero.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &500i128);
+
+    transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 500i128);
+
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&treasury), 500i128);
+}
+
+#[test]
+fn test_boundary_one_over_balance_fails_deterministically() {
+    // Boundary: transferring one unit more than the available balance must fail
+    // without mutating any state.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+
+    token.stellar.mint(&holder, &500i128);
+
+    let result = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 501i128);
+    }));
+    assert!(result.is_error(), "one over balance must fail");
+    assert_eq!(token.token.balance(&holder), 500i128);
+    assert_eq!(token.token.balance(&treasury), 0i128);
+}
+
+#[test]
+fn test_regression_fee_token_failure_is_recoverable() {
+    // Regression: a fee-on-transfer token must be rejected, and the failure must
+    // not leave the holder debited or the treasury credited.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let fee_token_id = env.register(FeeOnTransferToken, ());
+    let holder = Address::generate(&env);
+    let treasury = Address::generate(&env);
+
+    mint_fee_token(&env, &fee_token_id, &holder, 1000i128);
+
+    let holder_before = env.as_contract(&fee_token_id, || {
+        let balance: i128 = env.storage().persistent().get(&holder).unwrap_or(0);
+        balance
+    });
+    let treasury_before = env.as_contract(&fee_token_id, || {
+        let balance: i128 = env.storage().persistent().get(&treasury).unwrap_or(0);
+        balance
+    });
+
+    let result = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(
+            &env,
+            &fee_token_id,
+            &holder,
+            &treasury,
+            1000i128,
+        );
+    }));
+    assert!(result.is_error(), "fee on transfer must be rejected");
+
+    let holder_after = env.as_contract(&fee_token_id, || {
+        let balance: i128 = env.storage().persistent().get(&holder).unwrap_or(0);
+        balance
+    });
+    let treasury_after = env.as_contract(&fee_token_id, || {
+        let balance: i128 = env.storage().persistent().get(&treasury).unwrap_or(0);
+        balance
+    });
+
+    assert_eq!(holder_after, holder_before, "holder must not be debited on failure");
+    assert_eq!(treasury_after, treasury_before, "treasury must not be credited on failure");
+}
