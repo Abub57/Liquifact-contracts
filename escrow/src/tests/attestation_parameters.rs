@@ -117,3 +117,47 @@ fn revoked_attestation_page_enforces_limit_boundaries() {
         MAX_ATTESTATION_REVOKE_BATCH
     );
 }
+
+#[test]
+fn serialized_appends_competing_for_final_slot_do_not_overwrite() {
+    let env = Env::default();
+    let client = initialized_client(&env);
+
+    for index in 0..(MAX_ATTESTATION_APPEND_ENTRIES - 1) {
+        client.append_attestation_digest(&digest(&env, index as u8));
+    }
+
+    let first = digest(&env, 0xA1);
+    let competing = digest(&env, 0xB2);
+    client.append_attestation_digest(&first);
+
+    assert_contract_error(
+        client.try_append_attestation_digest(&competing),
+        EscrowError::AttestationAppendLogCapacityReached,
+    );
+
+    let log = client.get_attestation_append_log();
+    assert_eq!(log.len(), MAX_ATTESTATION_APPEND_ENTRIES);
+    assert_eq!(log.get(MAX_ATTESTATION_APPEND_ENTRIES - 1).unwrap(), first);
+}
+
+#[test]
+fn overlapping_revoke_batch_rolls_back_when_competing_revoke_won() {
+    let env = Env::default();
+    let client = initialized_client(&env);
+    client.append_attestation_digest(&digest(&env, 0x01));
+    client.append_attestation_digest(&digest(&env, 0x02));
+
+    client.revoke_attestation_digest(&1);
+
+    let mut competing_batch = Vec::new(&env);
+    competing_batch.push_back(0);
+    competing_batch.push_back(1);
+    assert_contract_error(
+        client.try_revoke_attestation_digests(&competing_batch),
+        EscrowError::AttestationAlreadyRevoked,
+    );
+
+    assert!(!client.is_attestation_revoked(&0));
+    assert!(client.is_attestation_revoked(&1));
+}
