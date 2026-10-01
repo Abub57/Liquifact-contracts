@@ -193,8 +193,18 @@ pub const EVENT_SCHEMA_VERSION: u32 = 1;
 /// Revocation via [`LiquifactEscrow::revoke_attestation_digest`] does not consume a slot.
 pub const MAX_ATTESTATION_APPEND_ENTRIES: u32 = 32;
 
-/// Upper bound on [`LiquifactEscrow::append_attestation_digests`] items per batch call.
-/// Mirrors [`MAX_ATTESTATION_REVOKE_BATCH`] for consistent batch sizing.
+/// Minimum configurable cap on the attestation append log.
+pub const MIN_ATTESTATION_LIMIT: u32 = 1;
+
+/// Maximum configurable cap on the attestation append log.
+pub const MAX_ATTESTATION_LIMIT: u32 = MAX_ATTESTATION_APPEND_ENTRIES;
+
+/// Default cap used when [`LiquifactEscrow::set_attestation_limit`] has never
+/// been called.
+pub const DEFAULT_ATTESTATION_LIMIT: u32 = MAX_ATTESTATION_APPEND_ENTRIES;
+
+/// Maximum number of digests that can be appended in a single
+/// [`LiquifactEscrow::append_attestation_digests`] call.
 pub const MAX_ATTESTATION_APPEND_BATCH: u32 = 32;
 
 /// Maximum number of indices that can be revoked in a single batch call.
@@ -251,6 +261,18 @@ const CLOSE_METADATA_KEY: &str = "CloseMetadata";
 const CLOSED_SYMBOL: Symbol = symbol_short!("closed");
 /// Stable symbol for stored close metadata. See [`CLOSED_SYMBOL`].
 const CLOSE_METADATA_SYMBOL: Symbol = symbol_short!("closemet");
+
+/// Emitted by [`LiquifactEscrow::set_attestation_limit`] when the append-log
+/// cap is changed. Carries the previous and new cap values.
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AttestationLimitUpdated {
+    #[topic]
+    pub name: Symbol,
+    pub invoice_id: String,
+    pub old_limit: u32,
+    pub new_limit: u32,
+}
 
 #[contractimpl]
 impl LiquifactEscrow {
@@ -966,35 +988,18 @@ pub const MAX_PAUSE_TOGGLE_WINDOW_SECS: u64 = 7_776_000; // 90 days
     /// This bounds the worst-case release instruction budget that scales with participant
     /// count when `max_unique_investors` was not configured at init.
     UniqueInvestorHardCapReached = 249,
-    /// Compatibility-restored codes (issue #1270): variants referenced by entrypoints
-    /// but missing from the enum. Codes are append-only from 280 to preserve all
-    /// existing discriminants above.
-    ReleaseAmountNotPositive = 280,
-    ReleaseExceedsRemaining = 281,
-    ReleaseNotFunded = 282,
-    PausedBlocksRelease = 283,
-    LegalHoldBlocksRelease = 284,
-    LegalHoldBlocksPartialSettle = 285,
-    PartialSettleNotOpen = 286,
-    PartialSettleUnauthorizedCaller = 287,
-    CollateralBatchEmpty = 288,
-    CollateralBatchTooLarge = 289,
-    FloorLowerNotOpen = 290,
-    NewFloorNotPositive = 291,
-    NewFloorNotLower = 292,
-    FundingDeadlineBeyondMaturity = 293,
-    FundingDeadlineNotExtended = 294,
-    FundingTokenScaleInvalid = 295,
-    HorizonNotRaised = 296,
-    LegalHoldBlocks = 297,
-    LegalHoldBlocksPayerRotation = 298,
-    MaxPerInvestorCapNotConfigured = 299,
-    MaxPerInvestorCapNotRaised = 300,
-    NewPayerSameAsCurrent = 301,
-    PayerRotationNotOpen = 302,
-    PauseScopeMismatch = 303,
-    PausedBlocks = 304,
-    Unauthorized = 305,
+
+    /// [`LiquifactEscrow::set_attestation_limit`] received a value outside
+    /// `MIN_ATTESTATION_LIMIT..=MAX_ATTESTATION_LIMIT`.
+    AttestationLimitOutOfRange = 176,
+
+    /// [`LiquifactEscrow::append_attestation_digests`] received an empty
+    /// `digests` vector.
+    AttestationAppendBatchEmpty = 177,
+
+    /// [`LiquifactEscrow::append_attestation_digests`] received more than
+    /// [`MAX_ATTESTATION_APPEND_BATCH`] digests.
+    AttestationAppendBatchTooLarge = 178,
 }
 
 #[inline(always)]
@@ -1312,6 +1317,12 @@ pub enum DataKey {
     /// Absent ⇒ not revoked. Written as `true` by [`LiquifactEscrow::revoke_attestation_digest`].
     /// Preserves the original digest for auditability while signalling supersession.
     AttestationRevoked(u32),
+
+    /// Configured cap on the attestation append log, set by
+    /// [`LiquifactEscrow::set_attestation_limit`].
+    /// Absent → [`DEFAULT_ATTESTATION_LIMIT`].
+    AttestationLimit,
+
     /// When true, only allowlisted addresses may call [`LiquifactEscrow::fund`] or [`LiquifactEscrow::fund_with_commitment`].
     AllowlistActive,
     /// Whether a specific address is permitted to fund when [`DataKey::AllowlistActive`] is true.
@@ -3678,6 +3689,99 @@ impl LiquifactEscrow {
             .instance()
             .get(&DataKey::AttestationAppendLog)
             .unwrap_or_else(|| Vec::new(env))
+    }
+
+    /// Admin-only setter for the attestation append-log cap.
+    ///
+    /// # Bounds
+    /// Rejects `limit < MIN_ATTESTATION_LIMIT` or `limit > MAX_ATTESTATION_LIMIT`
+    /// with [`EscrowError::AttestationLimitOutOfRange`].
+    ///
+    /// # Invariants
+    /// - Does not retroactively invalidate existing log entries.
+    /// - Enforcement applies to future `append_attestation_digest` /
+    ///   `append_attestation_digests` calls only.
+    ///
+    /// # Events
+    /// Emits [`AttestationLimitUpdated`] with `old_limit` equal to the value
+    /// before this call (or [`DEFAULT_ATTESTATION_LIMIT`] if never set) and
+    /// `new_limit` equal to `limit`.
+    pub fn set_attestation_limit(env: Env, limit: u32) {
+        let escrow = Self::load_escrow_require_admin(&env);
+        ensure(
+            &env,
+            limit >= MIN_ATTESTATION_LIMIT && limit <= MAX_ATTESTATION_LIMIT,
+            EscrowError::AttestationLimitOutOfRange,
+        );
+        let old_limit = Self::get_attestation_limit(env.clone());
+        env.storage()
+            .instance()
+            .set(&DataKey::AttestationLimit, &limit);
+        AttestationLimitUpdated {
+            name: symbol_short!("att_lim"),
+            invoice_id: escrow.invoice_id.clone(),
+            old_limit,
+            new_limit: limit,
+        }
+        .publish(&env);
+    }
+
+    /// Returns the configured attestation append-log cap.
+    ///
+    /// Falls back to [`DEFAULT_ATTESTATION_LIMIT`] when
+    /// [`LiquifactEscrow::set_attestation_limit`] has never been called.
+    pub fn get_attestation_limit(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::AttestationLimit)
+            .unwrap_or(DEFAULT_ATTESTATION_LIMIT)
+    }
+
+    /// Atomically append multiple digests to the bounded attestation append log.
+    ///
+    /// # Guard order
+    /// 1. Empty-batch check  -> [`EscrowError::AttestationAppendBatchEmpty`]
+    /// 2. Batch-size check   -> [`EscrowError::AttestationAppendBatchTooLarge`]
+    /// 3. Admin authorization
+    /// 4. Pre-flight capacity check against the configured limit
+    /// 5. Single atomic write
+    ///
+    /// Any guard failure rolls back the whole call -- no partial append.
+    pub fn append_attestation_digests(env: Env, digests: Vec<BytesN<32>>) {
+        let n = digests.len();
+        ensure(&env, n > 0, EscrowError::AttestationAppendBatchEmpty);
+        ensure(
+            &env,
+            n <= MAX_ATTESTATION_APPEND_BATCH,
+            EscrowError::AttestationAppendBatchTooLarge,
+        );
+
+        let escrow = Self::load_escrow_require_admin(&env);
+        let limit = Self::get_attestation_limit(env.clone());
+        let mut log: Vec<BytesN<32>> = Self::load_attestation_log(&env);
+
+        ensure(
+            &env,
+            log.len() + n <= limit,
+            EscrowError::AttestationAppendLogCapacityReached,
+        );
+
+        for i in 0..n {
+            let digest = digests.get(i).unwrap();
+            let idx = log.len();
+            log.push_back(digest.clone());
+            AttestationDigestAppended {
+                name: symbol_short!("att_app"),
+                invoice_id: escrow.invoice_id.clone(),
+                index: idx,
+                digest,
+            }
+            .publish(&env);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AttestationAppendLog, &log);
     }
 
     /// Assert that `index` falls within the current append-log bounds.
