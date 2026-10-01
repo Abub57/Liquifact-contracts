@@ -128,4 +128,14 @@ pub enum EscrowError {
     FeeScheduleSameAsACtive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
+
+    // ------------------------------------------------------------------------------
+    // Attestation Validation Errors (250..259)
+    // ------------------------------------------------------------------------------
+    /// Attestation payload failed structural or semantic validation.
+    AttestationInvalid = 250,
+    /// An attestation with the same identifier has already been recorded.
+    AttestationDuplicate = 251,
+    /// Attestation value fell outside the accepted inclusive bounds.
+    AttestationOutOfBounds = 252,
 }

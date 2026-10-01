@@ -3,17 +3,25 @@
 
 This document enumerates the invariants that must always hold for the **SME collateral commitment** metadata in the LiquiFact escrow contract.
 
+> **Compatibility contract:** The entry points, storage key, error codes, and event payloads described below are part of the public interface. Any change to their names, signatures, error semantics, or payload shape must ship with a tested migration path and an updated version of this document.
+
 ---
+
+## Validation Boundaries
 
 ## Overview
 
 The escrow contract allows the SME (Small‑Medium Enterprise) to record optional collateral information via the entrypoint:
+
+The following entry points are the stable public surface for this feature. Their names, argument order, and return types must not change without a compatibility plan.
 
 - `record_sme_collateral_commitment`
 - `clear_sme_collateral_commitment`
 - `get_sme_collateral_commitment`
 
 The recorded data is stored in the instance storage key `DataKey::SmeCollateralPledge` and emitted in the event `CollateralRecordedEvt`.  It is **metadata‑only** and does **not** move tokens, lock assets, or affect any settlement or withdrawal logic.
+
+The storage key `DataKey::SmeCollateralPledge` and the event symbol `CollateralRecordedEvt` are part of the compatibility contract: off‑chain indexers and downstream consumers depend on them. Renaming or moving either requires a coordinated migration.
 
 ---
 
@@ -56,6 +64,8 @@ The following invariants are owned by this subsystem and must be preserved by an
 
 ---
 
+## Duplicate & Invalid Input Handling
+
 ## Related Entry Points
 
 | Entry Point | Purpose | Relevant Invariant Checks |
@@ -75,6 +85,8 @@ All rejections surface as typed `EscrowError` variants (`CollateralAmountNotPosi
 - The SME collateral commitment is **off‑chain risk review metadata** only.  Consumers must treat it as advisory information; it provides no on‑chain guarantees of custody or lien.
 - Because it does not affect token balances, the contract does not perform any token‑transfer safety checks for this path.
 - The monotonic timestamp invariant prevents replay attacks that could otherwise downgrade a previously recorded higher‑value pledge.
+
+Failures on this path must be diagnosable from the emitted error code and event without exposing sensitive SME data. Logs and events must not include off‑chain risk details beyond the amount, asset symbol, and timestamps already defined in the payload.
 
 ---
 
