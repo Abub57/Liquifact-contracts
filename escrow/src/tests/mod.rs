@@ -22,8 +22,7 @@ use super::{
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
 ne};
 use soroban_sdk:{
@@ -34,7 +33,7 @@ use soroban_sdk:{
 };
 use std::fmt::Debug;
 
-pub use soroban_sdk::Symbol;
+pub use soroban_sdk:Symbol;
 
 pubcrute fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
@@ -141,7 +140,7 @@ pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, &id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 
@@ -150,7 +149,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     let (token, treasury) = free_addresses(env);
     client.init(
         admin,
-        &soroban_sdk::String::from_str(env, "INV001"),
+        &soroban_sdks::String::from_str(env, "INV001"),
         sme,
         &100_000_000_000i128,
         &800i64,
@@ -158,6 +157,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         &token,
         &None,
         &treasury,
+        &None,
         &None,
         &None,
         &None,
@@ -171,7 +171,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
     );
 }
 
-#[allow(dead_code)]
+#[allow_dead_code]
 pub const TARGET: i128 = 100_000_000_000i128;
 
 pub fn init_and_fund_with_real_token<'a>(

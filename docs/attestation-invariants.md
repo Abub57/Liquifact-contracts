@@ -1,15 +1,15 @@
 # Escrow Attestation Invariants
 
 **Status:** Accepted  
-**Refs:** [`escrow/src/lib.rs`](../escrow/src/lib.rs), [`escrow/src/tests/attestations.rs`](../escrow/src/tests/attestations.rs), [`docs/escrow-attestations.md`](escrow-attestations.md), [`docs/escrow-error-messages.md`](escrow-error-messages.md)
+**Refs:** [`escrow/src/lib.rs`](../escrow/src/lib.rs), [`escrow/src/tests/attestations.rs`](../escrow/src/tests/attestations.rs), [`escrow/src/tests/attestation_config_view.rs`](../escrow/src/tests/attestation_config_view.rs), [`docs/escrow-attestations.md`](escrow-attestations.md), [`docs/escrow-error-messages.md`](escrow-error-messages.md)
 
 ---
 
 ## Overview
 
-The LiquiFact escrow contract provides compliance chain-anchoring capabilities through 32-byte digest attestations (e.g. SHA-256 hashes of off-chain KYC/KYB documents, IPFS CIDs, or legal bundles). Attestations act as tamper-evident metadata pointers anchored to specific ledger sequences.
+The LiquFact escrow contract provides compliance chain-anchoring capabilities through 32-byte digest attestations (e.g. SHA-256 hashes of off-chain KYC/KYB documents, IPFS CIDs, or legal bundles). Attestations act as tamper-evident metadata pointers anchored to specific ledger sequences.
 
-This document specifies the core state and behavioral **invariants** governing attestation storage, access control, bounds, revocations, and entrypoint execution. All production contract modifications must preserve these invariants.
+This document specifies the core state and behavioral **configuration view** invariants governing attestation storage, access control, bounds, revocations, and entrypoint execution. All production contract modifications must preserve these invariants.
 
 ---
 
@@ -17,7 +17,7 @@ This document specifies the core state and behavioral **invariants** governing a
 
 | ID | Invariant Name | Short Description | Primary Enforcement | Error Code / Behavior |
 |---|---|---|---|---|
-| **INV-ATT-1** | Admin Authorization Boundary | All state-mutating attestation entrypoints require `InvoiceEscrow::admin` auth. | `load_escrow_require_admin` / `admin.require_auth()` | Stellar Auth Rejection |
+| **INV-ATT-1j* | Admin Authorization Boundary | All state-mutating attestation entrypoints require `InvoiceEscrow::admin` auth. | `load_escrow_require_admin` / `admin.require_auth()` | Stellar Auth Rejection |
 | **INV-ATT-2** | Primary Attestation Single-Set Immutability | `PrimaryAttestationHash` is write-once; cannot be overwritten, cleared, or rebound. | `bind_primary_attestation_hash` | `PrimaryAttestationAlreadyBound` (50) |
 | **INV-ATT-3** | Append Log Bounded Capacity | `AttestationAppendLog` is capped at `MAX_ATTESTATION_APPEND_ENTRIES` (32 digests). | `append_attestation_digest` | `AttestationAppendLogCapacityReached` (51) |
 | **INV-ATT-4** | Append Log Positional Stability | Entries in `AttestationAppendLog` maintain 0-based index position and value indefinitely. | Append-only logic (`push_back`) | Immutable log sequence |
@@ -34,7 +34,7 @@ This document specifies the core state and behavioral **invariants** governing a
 
 ### INV-ATT-1: Admin Authorization Boundary
 
-State-mutating attestation entrypoints—`bind_primary_attestation_hash`, `append_attestation_digest`, `revoke_attestation_digest`, `revoke_attestation_digests`, and `unrevoke_attestation_digest`—must be invoked by or signed with the authority of the escrow instance's `InvoiceEscrow::admin`.
+State-mutating attestation entrypoints--`bind_primary_attestation_hash`, `append_attestation_digest`, `revoke_attestation_digest`, `revoke_attestation_digests`, and `unrevoke_attestation_digest`--must be invoked by or signed with the authority of the escrow instance's `InvoiceEscrow::admin`.
 
 - **Enforcement Location:** 
   - `bind_primary_attestation_hash` and `append_attestation_digest` call `Self::load_escrow_require_admin(&env)`.
@@ -133,20 +133,32 @@ All attestation state modifications publish structured Soroban contract events f
 
 ---
 
+### INV-ATT-11: Configuration View Determinism
+
+The attestation configuration view (`AttestationConfigView`) is a read-only projection of attestation constants and current state. It must be deterministic for any given storage state.
+
+- **Rule:** `AttestationConfigView` MUST report the exact bounds (`MAX_ATTESTATION_APPEND_ENTRIES`, `MAX_ATTESTATION_REVOKE_BATCH`, `MAX_ATTESTATION_READ_PAGE`) and the current occupancy of the append log.
+- **Enforcement Location:** [`escrow/src/tests/attestation_config_view.rs`](../escrow/src/tests/attestation_config_view.rs) verifies the view against the constants and storage layout.
+- **Boundary Behavior:** The view must report `attestation_append_log_length` correctly at 0, at the exact capacity boundary (32), and after revocation/revocation reversal.
+- **Invalid Input:** The view is pure and must not panic on any storage state, including an empty log or a fully revoked log.
+
+---
+
 ## Entrypoint Cross-Reference Matrix
 
 | Entrypoint | Type | Required Auth | Storage Keys Read / Written | Validated Error Codes | Event Emitted |
 |---|---|---|---|---|---|
 | `bind_primary_attestation_hash` | Mutating | `admin` | W: `PrimaryAttestationHash` | `PrimaryAttestationAlreadyBound` (50) | `PrimaryAttestationBound` |
 | `append_attestation_digest` | Mutating | `admin` | R/W: `AttestationAppendLog` | `AttestationAppendLogCapacityReached` (51) | `AttestationDigestAppended` |
-| `revoke_attestation_digest` | Mutating | `admin` | R: `AttestationAppendLog`<br>W: `AttestationRevoked(i)` | `AttestationIndexOutOfRange` (52)<br>`AttestationAlreadyRevoked` (53) | `AttestationDigestRevoked` |
-| `revoke_attestation_digests` | Mutating | `admin` | R: `AttestationAppendLog`<br>W: `AttestationRevoked(i)` | `AttestationIndexOutOfRange` (52)<br>`AttestationAlreadyRevoked` (53)<br>`AttestationBatchEmpty` (54)<br>`AttestationBatchTooLarge` (55) | `AttestationDigestRevoked` (per index) |
-| `unrevoke_attestation_digest` | Mutating | `admin` | R: `AttestationAppendLog`<br>Del: `AttestationRevoked(i)` | `AttestationIndexOutOfRange` (52)<br>`AttestationNotRevoked` (56) | `AttestationDigestUnrevoked` |
+| `revoke_attestation_digest` | Mutating | `admin` | R: `AttestationAppendLog`<br />W: `AttestationRevoked(i)` | `AttestationIndexOutOfRange` (52)<br />`AttestationAlreadyRevoked` (53) | `AttestationDigestRevoked` |
+| `revoke_attestation_digests` | Mutating | `admin` | R: `AttestationAppendLog`<br />W: `AttestationRevoked(i)` | `AttestationIndexOutOfRange` (52)<br />`AttestationAlreadyRevoked` (53)<br />`AttestationBatchEmpty` (54)<br />`AttestationBatchTooLarge` (55) | `AttestationDigestRevoked` (per index) |
+| `unrevoke_attestation_digest` | Mutating | `admin` | R: `AttestationAppendLog`<br />Del|: `AttestationRevoked(i)` | `AttestationIndexOutOfRange` (52)<br />`AttestationNotRevoked` (56) | `AttestationDigestUnrevoked` |
 | `get_primary_attestation_hash` | Read-only | None | R: `PrimaryAttestationHash` | None | None |
 | `get_attestation_append_log` | Read-only | None | R: `AttestationAppendLog` | None | None |
-| `get_attestation_digest_at` | Read-only | None | R: `AttestationAppendLog`<br>R: `AttestationRevoked(i)` | None | None |
+| `get_attestation_digest_at` | Read-only | None | R: `AttestationAppendLog`<br />R: `AttestationRevoked(i)` | None | None |
 | `is_attestation_revoked` | Read-only | None | R: `AttestationRevoked(i)` | None | None |
-| `get_revoked_attestation_digests` | Read-only | None | R: `AttestationAppendLog`<br>R: `AttestationRevoked(i)` | Bounded by `MAX_ATTESTATION_READ_PAGE` (20) | None |
+| `get_revoked_attestation_digests` | Read-only | None | R: `AttestationAppendLog`<br />R: `AttestationRevoked(i)` | Bounded by `MAX_ATTESTATION_READ_PAGE` (20) | None |
+| `get_attestation_config_view` | Read-only | None | R: `AttestationAppendLog`<br />R: `AttestationRevoked(i)` | None | None |
 
 ---
 
@@ -169,17 +181,34 @@ pub enum DataKey {
 
 ## Test Verification Mapping
 
-The invariants specified above are exhaustively verified in [`escrow/src/tests/attestations.rs`](../escrow/src/tests/attestations.rs):
+The invariants specified above are exhaustively verified in [`escrow/src/tests/attestations.rs`](../escrow/src/tests/attestations.rs) and [`escrow/src/tests/attestation_config_view.rs`](../escrow/src/tests/attestation_config_view.rs):
 
-| Invariant ID | Key Test Functions in `attestations.rs` |
-|---|---|
-| **INV-ATT-1** | `test_bind_primary_hash_non_admin_fails`, `test_append_digest_non_admin_fails`, `test_revoke_non_admin_fails`, `test_unrevoke_non_admin_fails` |
-| **INV-ATT-2** | `test_bind_primary_hash_same_digest_fails`, `test_bind_primary_hash_different_digest_fails` |
-| **INV-ATT-3** | `test_append_log_capacity_cap_exact_32`, `test_append_log_33rd_fails` |
-| **INV-ATT-4** | `test_append_log_maintains_order_and_index` |
-| **INV-ATT-5** | `test_revoke_out_of_bounds_fails`, `test_unrevoke_out_of_bounds_fails` |
-| **INV-ATT-6** | `test_revoke_already_revoked_fails`, `test_revoke_double_call_fails` |
-| **INV-ATT-7** | `test_revoke_digests_batch_happy_path`, `test_revoke_digests_batch_empty_fails`, `test_revoke_digests_batch_too_large_fails`, `test_revoke_digests_batch_duplicate_fails` |
-| **INV-ATT-8** | `test_unrevoke_attestation_digest_reverses_revocation`, `test_unrevoke_not_revoked_fails` |
-| **INV-ATT-9** | `test_attestations_do_not_interfere_with_funding_or_settlement` |
-| **INV-ATT-10** | `test_bind_primary_hash_stores_and_reads`, `test_append_digest_emits_event`, `test_revoke_emits_event`, `test_unrevoke_emits_event` |
+| Invariant ID | Key Test Functions in `attestations.rs` | Key Test Functions in `attestation_config_view.rs` |
+|---|---|---|
+| **INV-ATT-1** | `test_bind_primary_hash_non_admin_fails`, `test_append_digest_non_admin_fails`, `test_revoke_non_admin_fails`, `test_unrevoke_non_admin_fails` | `test_config_view_requires_no_auth` |
+| **INV-ATT-2** | `test_bind_primary_hash_same_digest_fails`, `test_bind_primary_hash_different_digest_fails` | `test_config_view_primary_bound_flag` |
+| **INV-ATT-3** | `test_append_log_capacity_cap_exact_32`, `test_append_log_33rd_fails` | `test_config_view_capacity_boundaries` |
+| **INV-ATT-4** | `test_append_log_maintains_order_and_index` | `test_config_view_log_order_stable` |
+| **INV-ATT-5** | `test_revoke_out_of_bounds_fails`, `test_unrevoke_out_of_bounds_fails` | `test_config_view_revocation_bounds` |
+| **INV-ATT-6** | `test_revoke_already_revoked_fails`, `test_revoke_double_call_fails` | `test_config_view_duplicate_revoke_rejected` |
+| **INV-ATT-7** | `test_revoke_digests_batch_happy_path`, `test_revoke_digests_batch_empty_fails`, `test_revoke_digests_batch_too_large_fails` | `test_config_view_batch_boundaries` |
+| **INV-ATT-8** | `test_unrevoke_not_revoked_fails` | `test_config_view_unrevoke_precondition` |
+| **INV-ATT-9** | `test_attestations_do_not_affect_financials` | `test_config_view_no_financial_side_effects` |
+| **INV-ATT-10** | `test_attestation_events_emitted` | `test_config_view_event_mapping` |
+| **INV-ATT-11** | N/A (view-only) | `test_config_view_deterministic`, `test_config_view_empty_log`, `test_config_view_full_log` |
+
+---
+
+## Boundary Case Matrix
+
+The following table enumerates the valid, invalid, duplicate, and boundary-case inputs covered by the configuration view tests:
+
+| Case Class | Input | Expected Behavior |
+|---|---|---|
+| Valid | Empty append log (0 entries) | View reports `length = 0`, no panic |
+| Valid | Exactly 32 entries | View reports `length = 32`, `at capacity = true` |
+| Valid | All entries revoked | View reports `revoked_count = length` |
+| Invalid | Append log beyond 32 | Contract rejects with code 51; view never sees >32 |
+| Duplicate | Same index revoked twice | Contract rejects with code 53; view remains consistent |
+| Boundary | Index 0 and index len-1 | Valid revocation targets |
+| Boundary | Index == len | Contract rejects with code 52 |

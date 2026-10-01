@@ -1,4 +1,5 @@
 use soroban_sdk::contracterror;
+
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(u32)]
@@ -115,4 +116,7 @@ pub enum EscrowError {
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
+    /// `LiquifactEscrow::set_attestation_config` received a configuration value
+    /// outside the accepted validation boundary.
+    AttestationConfigOutOfBounds = 246,
 }
