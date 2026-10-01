@@ -1,4 +1,5 @@
-#`!llow](
+#![allow(
+    clippy::too_many_arguments,
     unused_imports,
     unused_variables,
     dead_code,
@@ -90,6 +91,7 @@ mod settlement;
 mod settlement_config_view;
 // mod settlement_limit; // file not present in this tree
 mod yield_tier_boundaries;
+mod failure_recovery;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
