@@ -164,6 +164,14 @@ pub enum EscrowError {
     /// Returned when clearing collateral is attempted but no collateral is
     /// recorded.
     NoCollateralToClear = 300,
+    /// `set_collateral_limit` was called with a limit that is not strictly
+    /// greater than zero. The collateral limit is a positive bound and zero
+    /// would effectivly disable collateral recording for the escrow.
+    CollateralLimitInvalid = 301,
+    /// `set_collateral_limit` was called after the escrow has been funded;
+    /// changing the limit after funding would break the audit trail of the
+    /// collateral requirement that investors relied on.
+    CollateralLimitImmutableAfterFunding = 302,
 
     // ----------------------------------------------------------------------------
     // Pause Configuration & Rate-Limit Errors (230..239)
@@ -174,13 +182,13 @@ pub enum EscrowError {
     /// `LiquifactEscrow::set_pause_rate_limit` received a toggle limit outside
     /// `MIN_PAUSE_TOGGLE_LIMIT`..=[`MAX_PAUSE_TOGGLE_LIMIT`. Zero is allowed only with zero window.
     PauseToggleLimitOutOfRange = 231,
-    /// `LiquifactEscrow::set_pause_rate_limit` received a window outside
+    /// `set_pause_rate_limit` received a window outside
     /// `MIN_PAUSE_TOGGLE_WINDOW_SECS`..=[`MAX_PAUSE_TOGGLE_WINDOW_SECS`. Zero is allowed only with zero toggles.
     PauseToggleWindowOutOfRange = 232,
     /// `LiquifactEscrow:set_pause_rate_limit` received an inconsistent configuration:
     /// nonzero toggles must have a nonzero window, and nonzero window must have nonzero toggles.
     PauseRateLimitInvalidCombination = 233,
-    /// `LiquifactEscrow::set_paused` blocked because the admin has exceeded the configured pause toggle rate limit.
+    /// `set_paused` blocked because the admin has exceeded the configured pause toggle rate limit.
     PauseToggleRateLimitExceeded = 234,
 
     // ----------------------------------------------------------------------------
@@ -188,7 +196,7 @@ pub enum EscrowError {
     // ----------------------------------------------------------------------------
     /// `LiquifactEscrow::set_fee_schedule` received a fee outside the schedule's declared min/max bounds.
     FeeScheduleOutOfBounds = 240,
-    /// `LiquifactEscrow::set_fee_schedule` attempted to create a second pending schedule before the first activates.
+    /// `set_fee_schedule` attempted to create a second pending schedule before the first activates.
     FeeCheduleAlreadyPending = 241,
     /// `LiquifactEscrow:set_fee_schedule` received an activation ledger in the past.
     FeeCheduleInvalidActivation = 242,
@@ -198,4 +206,42 @@ pub enum EscrowError {
     FundingTokenScaleInvalid = 244,
     /// Returned when a funding token scale is required but has not been set.
     FundingTokenScaleNotSet = 245,
+
+    // ------------------------------------------------------------------------------
+    // Failure Recovery Errors (250..259)
+    // ------------------------------------------------------------------------------
+    /// A recovery operation was requested but no recovery state was recorded for
+    /// the escrow instance. Callers must not assume a recovery is in progress.
+    NoRecoveryInProgress = 250,
+    /// A recovery operation was requested while another recovery is already in
+    /// progress. Concurrent or duplicate recovery attempts must be rejected so
+    /// that state transitions remain deterministic.
+    RecoveryAlreadyInProgress = 251,
+    /// The recovery attempt referenced a checkpoint or snapshot that does not
+    /// exist or has already been consumed. Recovery must be idempotent and
+    /// observable; replaying a consumed checkpoint is unsafe.
+    RecoveryCheckpointNotFound = 252,
+    /// The recovery attempt referenced a checkpoint that has already been
+    /// finalized. Finalized checkpoints are immutable and cannot be re-applied.
+    RecoveryCheckpointAlreadyFinalized = 253,
+    /// The recovery attempt was rejected because the recorded recovery state is
+    /// inconsistent with the current escrow state (e.g. status or balances
+    /// diverged). This prevents silent data loss during partial failure.
+    RecoveryStateInconsistent = 254,
+    /// The recovery attempt was rejected because the supplied recovery reason
+    /// was empty or otherwise invalid. Recovery must be auditable.
+    InvalidRecoveryReason = 255,
+    /// The recovery attempt was rejected because the caller is not authorized to
+    /// perform recovery for this escrow instance.
+    RecoveryUnauthorized = 256,
+    /// The recovery attempt was rejected because the escrow is not in a state
+    /// that permits recovery (e.g. already settled or cancelled).
+    RecoveryNotAllowedInCurrentState = 257,
+    /// The recovery attempt exceeded the maximum number of retries allowed for
+    /// a single recovery cycle. Retries must be bounded to remain deterministic.
+    RecoveryRetryLimitExceeded = 258,
+    /// The recovery attempt failed while applying a state transition. The
+    /// escrow remains in its previous consistent state and the failure is
+    /// observable to the caller.
+    RecoveryTransitionFailed = 259,
 }

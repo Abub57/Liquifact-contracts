@@ -9,7 +9,7 @@
 
 The LiquiFact escrow contract provides compliance chain-anchoring capabilities through 32-byte digest attestations (e.g. SHA-256 hashes of off-chain KYC/KYB documents, IPFS cIDs, or legal bundles). Attestations act as tamper-evident metadata pointers anchored to specific ledger sequences.
 
-This document specifies the core state and behavioral **invariants** governing attestation storage, access control, bounds, revocations, and entrypoint execution. All production contract modifications must preserve these invariants.
+This document specifies the core state and behavioral **configuration view** invariants governing attestation storage, access control, bounds, revocations, and entrypoint execution. All production contract modifications must preserve these invariants.
 
 ---
 
@@ -17,7 +17,7 @@ This document specifies the core state and behavioral **invariants** governing a
 
 | ID | Invariant Name | Short Description | Primary Enforcement | Error Code / Behavior |
 |---|---|---|---|---|
-| **INV-ATT-1** | Admin Authorization Boundary | All state-mutating attestation entrypoints require `InvoiceEscrow::admin` auth. | `load_escrow_require_admin` / `admin.require_auth()` | Stellar Auth Rejection |
+| **INV-ATT-1j* | Admin Authorization Boundary | All state-mutating attestation entrypoints require `InvoiceEscrow::admin` auth. | `load_escrow_require_admin` / `admin.require_auth()` | Stellar Auth Rejection |
 | **INV-ATT-2** | Primary Attestation Single-Set Immutability | `PrimaryAttestationHash` is write-once; cannot be overwritten, cleared, or rebound. | `bind_primary_attestation_hash` | `PrimaryAttestationAlreadyBound` (50) |
 | **INV-ATT-3** | Append Log Bounded Capacity | `AttestationAppendLog` is capped at `MAX_ATTESTATION_APPEND_ENTRIES` (32 digests). | `append_attestation_digest` | `AttestationAppendLogCapacityReached` (51) |
 | **INV-ATT-4** | Append Log Positional Stability | Entries in `AttestationAppendLog` maintain 0-based index position and value indefinitely. | Append-only logic (`push_back`) | Immutable log sequence |
@@ -130,6 +130,17 @@ All attestation state modifications publish structured Soroban contract events f
   - `append_attestation_digest` $\rightarrow$ `AttestationDigestAppended` (`att_app`)
   - `revoke_attestation_digest` / `revoke_attestation_digests` $\rightarrow$ `AttestationDigestRevoked` (`att_rev`)
   - `unrevoke_attestation_digest` $\rightarrow$ `AttestationDigestUnrevoked` (`att_unrev`)
+
+---
+
+### INV-ATT-11: Configuration View Determinism
+
+The attestation configuration view (`AttestationConfigView`) is a read-only projection of attestation constants and current state. It must be deterministic for any given storage state.
+
+- **Rule:** `AttestationConfigView` MUST report the exact bounds (`MAX_ATTESTATION_APPEND_ENTRIES`, `MAX_ATTESTATION_REVOKE_BATCH`, `MAX_ATTESTATION_READ_PAGE`) and the current occupancy of the append log.
+- **Enforcement Location:** [`escrow/src/tests/attestation_config_view.rs`](../escrow/src/tests/attestation_config_view.rs) verifies the view against the constants and storage layout.
+- **Boundary Behavior:** The view must report `attestation_append_log_length` correctly at 0, at the exact capacity boundary (32), and after revocation/revocation reversal.
+- **Invalid Input:** The view is pure and must not panic on any storage state, including an empty log or a fully revoked log.
 
 ---
 

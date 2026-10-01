@@ -44,10 +44,10 @@ pubcrate fn assert_contract_error<T, E>(
     let expected_code = expected as u32;
     match result {
         Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
         Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -61,12 +61,13 @@ mod auth_matrix;
 mod cap_validation;
 // mod collateral_boundary_tests; // file not present in this tree
 // mod collateral_config_view;    // file not present in this tree
-// mod collateral_limit_setter;   // file not present in this tree
+mod collateral_limit_setter;
 mod dispute_release;
 #[rustfmt::skip]
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
+mod external_calls_mocked_concurrency;
 mod funding;
 mod init;
 // `integration` (integration.rs) is disabled: it was written against a contract
@@ -160,8 +161,8 @@ pub fn default_init(client: &LiQuifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None, // No funding deadline
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 }
 
@@ -201,8 +202,8 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None::<i64>,
-        &None::<u32>,
+        &None::<i64,
+        &None::<u32,
     );
 
     let investor = Address::generate(env);
