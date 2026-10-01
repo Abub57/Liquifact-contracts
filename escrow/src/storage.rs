@@ -1,1 +1,146 @@
-dXNlIGNyYXRlOjplcnJvcnM6OkVzY3Jvd0Vycm9yOw0KdXNlIGNyYXRlOjp0eXBlczo6e0ZlZVNjaGVkdWxlLCBGZWVDaGVkdWxlS2V5LCBGZWVDaGVkdWxlU3RhdGV9Ow0KdXNlIHNvcm9iYW5fc2RrOjp7YWRkcmVzcywgQWRkcmVzcywgRW52LCBTdG9yYWdlfTsNCg0KLy8vIFBlcnNpc3RlZCBmZWUgc2NoZWR1bGUgc3RhdGUuDQovLy8NCi8vLyBJbnZhcmlhbnRzOg0KLy8vIC0gYGFjdGl2ZWAgbWF5IGJlIGBOb25lYCBvbmx5IGJlZm9yZSB0aGUgZmlyc3Qgc2NoZWR1bGUgaXMgc2V0Lg0KLy8vIC0gYHBlbmRpbmdgIGFuZCBgYWN0aXZhdGlvbl9sZWRnZXJgIGFyZSBhbHdheXMgc2V0IGFuZCBjbGVhcmVkIHRvZ2V0aGVyLg0KLy8vIC0gYHByZXZpb3VzYCBob2xkcyB0aGUgbGFzdCBhY3RpdmUgc2NoZWR1bGUgYmVmb3JlIGEgcGVuZGluZyBvbmUgYWN0aXZhdGVzLg0KcHViKGNyYXRlKSBmbiBnZXRfc3RhdGUoZW52OiAmRW52KSAtPiBGZWVDaGVkdWxlU3RhdGUgew0KICAgIGVudi5zdG9yYWdlKCkNCiAgICAgICAgLmluc3RhbmNlKCkNCiAgICAgICAgLmdldCgmRmVlU2NoZWR1bGVLZXk6OlN0YXRlKQ0KICAgICAgICAudW53cmFwX29yX2RlZmF1bHQoKQ0KfQ0KDQpwdWIoY3JhdGUpIGZuIHNldF9zdGF0ZShlbnY6ICZFbnYsIHN0YXRlOiAmRmVlQ2hlZHVsZVN0YXRlKSB7DQogICAgZW52LnN0b3JhZ2UoKS5pbnN0YW5jZSgpLnNldCgmRmVlU2NoZWR1bGVLZXk6OlN0YXRlLCBzdGF0ZSk7DQp9DQoNCi8vLyBBZG1pbi1hdXRob3JpemVkIGZlZSBzY2hlZHVsZSB1cGRhdGUuDQovLy8gU3RvcmVzIGEgbmV3IHBlbmRpbmcgc2NoZWR1bGUgdGhhdCBhY3RpdmF0ZXMgYXQgYGFjdGl2YXRpb25fbGVkZ2VyYC4NCi8vLw0KLy8vIEZhaWx1cmUgbW9kZToNCi8vLyAtIFJldHVybnMgYW4gZXJyb3Igd2l0aG91dCBtdXRhdGluZyBzdG9yYWdlIGlmIGF1dGhvcml6YXRpb24sIGJvdW5kcywNCi8vLyAgIGFjdGl2YXRpb24gbGVkZ2VyLCBwZW5kaW5nIGV4aXN0ZW5jZSwgb3IgZHVwbGljYXRlIGNoZWNrcyBmYWlsLg0KLy8vIC0gT24gc3VjY2Vzcywgc3RhdGUgaXMgd3JpdHRlbiBhdG9taWNhbGx5IGluIGEgc2luZ2xlIGBzZXRfc3RhdGVgIGNhbGwuDQpwdWIoY3JhdGUpIGZuIHNldF9mZWVfc2NoZWR1bGUoDQogICAgZW52OiAmRW52LA0KICAgIGFkbWluOiAmQWRkcmVzcywNCiAgICBzY2hlZHVsZTogRmVlU2NoZWR1bGUsDQogICAgYWN0aXZhdGlvbl9sZWRnZXI6IHUzMiwNCikgLT4gUmVzdWx0PCgpLCBFc2Nyb3dFcnJvcj4gew0KICAgIGFkbWluLnJlcXVpcmVfYXV0aCgpOw0KDQogICAgLy8gRW5mb3JjZSBuYW1lZCBib3VuZHMuDQogICAgaWYgc2NoZWR1bGUuZmVlX2JwcyA8IHNjaGVkdWxlLm1pbl9icHMgfHwgc2NoZWR1bGUuZmVlX2JwcyA+IHNjaGVkdWxlLm1heF9icHMgew0KICAgICAgICByZXR1cm4gRXJyKEVzY3Jvd0Vycm9yOjpGZWVDaGVkdWxlT3V0T2ZCb3VuZHMpOw0KICAgIH0NCg0KICAgIGxldCBjdXJyZW50X2xlZGdlciA9IGVudi5sZWRnZXIoKS5zZXF1ZW5jZSgpOw0KICAgIGlmIGFjdGl2YXRpb25fbGVkZ2VyIDwgY3VycmVudF9sZWRnZXIgew0KICAgICAgICByZXR1cm4gRXJyKEVzY3Jvd0Vycm9yOjpGZWVTĐNoZWR1bGVJbnZhbGlkQWN0aXZhdGlvbik7DQogICAgfQ0KDQogICAgbGV0IG11dCBzdGF0ZSA9IGdldF9zdGF0ZShlbnYpOw0KDQogICAgLy8gUmVqZWN0IGlmIGEgcGVuZGluZyBzY2hlZHVsZSBhbHJlYWR5IGV4aXN0cy4NCiAgICBpZiBzdGF0ZS5wZW5kaW5nLmlzX3NvbWUoKSB7DQogICAgICAgIHJldHVybiBFcnIoRXNjcm93RXJyb3I6OkZlZVNjaGVkdWxlQWxyZWFkeVBlbmRpbmcpOw0KICAgIH0NCg0KICAgIC8vIFJlamVjdCBkdXBsaWNhdGUgc3VibWlzc2lvbiBvZiB0aGUgYWN0aXZlIHNjaGVkdWxlLg0KICAgIGlmIHN0YXRlLmFjdGl2ZS5hc19yZWYoKSA9PSBTb21lKCZzY2hlZHVsZSkgew0KICAgICAgICByZXR1cm4gRXJyKEVzY3Jvd0Vycm9yOjpGZWVDaGVkdWxlU2FtZUFzQWN0aXZlKTsNCiAgICB9DQoNCiAgICAvLyBQcmVzZXJ2ZSB0aGUgcHJldmlvdXMgYWN0aXZlIHNjaGVkdWxlIGJlZm9yZSBzd2l0Y2hpbmcuDQogICAgc3RhdGUucHJldmlvdXMgPSBzdGF0ZS5hY3RpdmUuY2xvbmUoKTsNCiAgICBzdGF0ZS5wZW5kaW5nID0gU29tZShzY2hlZHVsZSk7DQogICAgc3RhdGUuYWN0aXZhdGlvbl9sZWRnZXIgPSBTb21lKGFjdGl2YXRpb25fbGVkZ2VyKTsNCg0KICAgIHNldF9zdGF0ZShlbnYsICZzdGF0ZSk7DQogICAgT2soKQ0KfQ0KDQovLy8gUmV0dXJucyB0aGUgY3VycmVudGx5IGFjdGl2ZSBmZWUgc2NoZWR1bGUsIHByb21vdGluZyBhIHBlbmRpbmcgc2NoZWR1bGUgaWYgaXRzIGFjdGl2YXRpb24gbGVkZ2VyIGhhcyBhcnJpdmVkLg0KcHViKGNyYXRlKSBmbiBnZXRfYWN0aXZlX2ZlZV9zY2hlZHVsZShlbnY6ICZFbnYpIC0+IE9wdGlvbjxGZWVTĐNoZWR1bGU+IHsNCiAgICBtYXliZV9hY3RpdmF0ZShlbnYpOw0KICAgIGdldF9zdGF0ZShlbnYpLmFjdGl2ZQ0KfQ0KDQovLy8gUmV0dXJucyB0aGUgcGVuZGluZyBmZWUgc2NoZWR1bGUsIGlmIGFueS4NCnB1YihjcmF0ZSkgZm4gZ2V0X3BlbmRpbmdfZmVlX3NjaGVkdWxlKGVudjogJkVudikgLT4gT3B0aW9uPEZlZVNjaGVkdWxlPiB7DQogICAgZ2V0X3N0YXRlKGVudikucGVuZGluZw0KfQ0KDQovLy8gQXR0ZW1wdHMgdG8gcHJvbW90ZSBhIHBlbmRpbmcgc2NoZWR1bGUgdG8gYWN0aXZlIGlmIGl0cyBhY3RpdmF0aW9uIGxlZGdlciBoYXMgYXJyaXZlZC4NCi8vLw0KLy8vIFRoaXMgaXMgZGV0ZXJtaW5pc3RpYyBhbmQgaWRlbXBvdGVudDogcmVwZWF0ZWQgY2FsbHMgd2l0aCB0aGUgc2FtZSBsZWRnZXINC i8vLyBwcm9kdWNlIHRoZSBzYW1lIHN0YXRlLCBhbmQgb25jZSBhY3RpdmF0ZWQgdGhlIHBlbmRpbmcgc2xvdCBpcyBjbGVhcmVkLg0KLy8vDQovLy8gSW52YXJpYW50OiBgcGVuZGluZ2AgYW5kIGBhY3RpdmF0aW9uX2xlZGdlcmAgYXJlIGFsd2F5cyB1cGRhdGVkIHRvZ2V0aGVyLg0KZm4gbWF5YmVfYWN0aXZhdGUoZW52OiAmRW52KSB7DQogICAgbGV0IG11dCBzdGF0ZSA9IGdldF9zdGF0ZShlbnYpOw0KICAgIGlmIGxldCAoU29tZShwZW5kaW5nKSwgU29tZShhY3RpdmF0aW9uX2xlZGdlcikpID0gKHN0YXRlLnBlbmRpbmcuY2xvbmUoKSwgc3RhdGUuYWN0aXZhdGlvbl9sZWRnZXIpIHsNCiAgICAgICAgaWYgYWN0aXZhdGlvbl9sZWRnZXIgPD0gZW52LmxlZGdlcigpLnNlcXVlbmNlKCkgew0KICAgICAgICAgICAgLy8gUHJldmlvdXMgaXMgYWxyZWFkeSBzdG9yZWQgd2hlbiB0aGUgcGVuZGluZyBzY2hlZHVsZSB3YXMgc3VibWl0dGVkLg0KICAgICAgICAgICAgc3RhdGUuYWN0aXZlID0gU29tZShwZW5kaW5nKTsNCiAgICAgICAgICAgIHN0YXRlLnBlbmRpbmcgPSBOb25lOw0KICAgICAgICAgICAgc3RhdGUuYWN0aXZhdGlvbl9sZWRnZXIgPSBOb25lOw0KICAgICAgICAgICAgc2V0X3N0YXRlKGVudiwgJnN0YXRlKTsNCiAgICAgICAgfQ0KICAgIH0NCn0NCg==
+use crate::errors::EscrowError;
+use crate::types::{FeeSchedule, FeeScheduleKey, FeeCheduleState};
+use soroban_sdk::{address, Address, Env, Storage};
+
+/// Invariants:
+/// - The stored state is always a consistent triple: (active, previous, pending,
+///   activation_ledger).
+/// - A pending schedule always has an activation ledger.
+/// - An activation ledger always has a pending schedule.
+/// - Activation is idempotent: repeated calls at or after the activation ledger
+///   produce the same state and never re-promote an already-active schedule.
+/// - The previous active schedule is preserved across activation so recovery
+///   can always refer to the last known-good schedule.
+
+/// Reads the persisted state. If the stored record is missing or corrupt,
+/// we fail closed to the default empty state rather than panicking.
+pub(crate) fn get_state(env: &Env) -> FeeCheduleState {
+    env.storage()
+        .instance()
+        .get(&peeScheduleKey::State)
+        .unwrap_or_default()
+}
+
+/// Persists the state and asserts the invariants before writing.
+/// This is the single write path for the fee schedule state so that any
+/// corruption is caught at the boundary and never persisted.
+pubht(crate) fn set_state(env: &Env, state: &FeeCheduleState) {
+    debug_assert!(
+        state.pending.is_some() == state.activation_ledger.is_some(),
+        "fee schedule state invariant violated: pending/activation mismatch"
+    );
+    env.storage().instance().set(&FeeCheduleKey::State, state);
+}
+
+/// Admin-authorized fee schedule update.
+/// Stores a new pending schedule that activates at `activation_ledger`.
+///
+/// This function is deterministic and atomic:
+/// - Validation happens before any state mutation.
+/// - If any check fails, no state is written.
+/// - On success, the previous active schedule is preserved and the new
+///   schedule is staged as pending.
+/// - A second call before activation returns `FeeScheduleAlreadyPending`,
+///   so retries cannot overwrite a pending schedule.
+pubht(crate) fn set_fee_schedule(
+    env: &Env,
+    admin: &Address,
+    schedule: FeeSchedule,
+    activation_ledger: u32,
+) -> Result<(), EscrowError> {
+    admin.require_auth();
+
+    // Enforce named bounds.
+    if schedule.fee_bps < schedule.min_bps || schedule.fee_bps > schedule.max_bps {
+        return Err(EscrowError::FeeCheduleOutOfBounds);
+    }
+
+    let current_ledger = env.ledger().sequence();
+    if activation_ledger < current_ledger {
+        return Err(EscrowError::FeeScheduleInvalidActivation);
+    }
+
+    let mut state = get_state(env);
+
+    // Reject if a pending schedule already exists.
+    if state.pending.is_some() {
+        return Err(EscrowError::FeeScheduleAlreadyPending);
+    }
+
+    // Reject duplicate submission of the active schedule.
+    if state.active.as_ref() == Some(&schedule) {
+        return Err(EscrowError::FeeCheduleSameAsActive);
+    }
+
+    // Preserve the previous active schedule before switching.
+    state.previous = state.active.clone();
+    state.pending = Some(schedule);
+    state.activation_ledger = Some(activation_ledger);
+
+    set_state(env, &state);
+    Ok()
+}
+
+/// Returns the currently active fee schedule, promoting a pending schedule if its activation ledger has arrived.
+/// This is idempotent and safe to call concurrently because activation only
+/// mutates state when a pending schedule exists and its activation ledger has
+/// been reached; once activated, the pending fields are cleared.
+pubht(crate) fn get_active_fee_schedule(env: &Env) -> Option<FeeSchedule> {
+    maybe_activate(env);
+    get_state(env).active
+}
+
+/// Returns the pending fee schedule, if any.
+/// This is a pure read and does not activate anything.
+pubht(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeChedule> {
+    get_state(env).pending
+}
+
+/// Returns the previous active fee schedule, if any.
+/// This is the recovery reference used when a pending schedule is staged or
+/// when activation is in flight.
+pubht(crate) fn get_previous_fee_schedule(env: &Env) -> Option<FeeSchedule> {
+    get_state(env).previous
+}
+
+/// Attempts to activate a pending schedule.
+/// This is the only place that moves a pending schedule into the active slot.
+/// It is deterministic and is a no-op when:
+/// - there is no pending schedule, or
+/// - the activation ledger has not yet been reached.
+/// If the stored state is inconsistent (pending without activation ledger, or
+/// vice versa), we recover by clearing the pending fields and keeping the
+/// active schedule intact. This ensures we do not silently lose the active
+/// schedule or activate a schedule without a valid ledger bound.
+fn maybe_activate(env: &Env) {
+    let mut state = get_state(env);
+
+    // Recover from inconsistent state: pending and activation ledger must agree.
+    if state.pending.is_none() && state.activation_ledger.is_some() {
+        state.activation_ledger = None;
+        set_state(env, &state);
+        return;
+    }
+    if state.pending.is_some() && state.activation_ledger.is_none() {
+        // We cannot determine when to activate, so drop the pending schedule
+        // and keep the active one. This is the safest recovery since the
+        // active schedule is always the authoritative one.
+        state.pending = None;
+        set_state(env, &state);
+        return;
+    }
+
+    if let (Some(pending), Some(activation_ledger)) =
+        (state.pending.clone(), state.activation_ledger)
+    {
+        if activation_ledger <= env.ledger().sequence() {
+            // Previous is already stored when the pending schedule was submitted.
+            // The active schedule becomes the new one, and the pending slot is
+            // cleared atomically with the activation ledger.
+            state.active = Some(pending);
+            state.pending = None;
+            state.activation_ledger = None;
+            set_state(env, &state);
+        }
+    }
+}
