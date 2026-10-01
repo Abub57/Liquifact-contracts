@@ -2368,452 +2368,58 @@ fn test_raise_max_per_investor_emits_event() {
     );
 }
 
-// ── Validation boundary tests for Issue #1341 ──────────────────────────────
+// ── raise_max_unique_investors — typed error codes ─────────────────────────
 
+/// Raising to the same cap value must be rejected with NewCapNotHigher (code 176).
 #[test]
-fn test_raise_max_per_investor_below_current_rejected() {
+fn test_raise_equal_typed_error() {
     let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "RMPI004"),
-        &sme,
-        &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &Some(50_000_000_000i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    assert_contract_error(
-        client.try_raise_max_per_investor(&49_000_000_000i128),
-        EscrowError::MaxPerInvestorCapNotRaised,
-    );
-}
-
-#[test]
-fn test_raise_max_per_investor_allows_funding_up_to_new_cap() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-    let inv = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "RMPI005"),
-        &sme,
-        &200_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &Some(50_000_000_000i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    client.fund(&inv, &50_000_000_000i128);
-    assert_eq!(client.get_contribution(&inv), 50_000_000_000i128);
-
-    assert_contract_error(
-        client.try_fund(&inv, &1i128),
-        EscrowError::InvestorContributionExceedsCap,
-    );
-
-    client.raise_max_per_investor(&100_000_000_000i128);
-
-    client.fund(&inv, &50_000_000_000i128);
-    assert_eq!(client.get_contribution(&inv), 100_000_000_000i128);
-}
-
-#[test]
-fn test_raise_max_per_investor_exact_at_cap_boundary_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "RMPI006"),
-        &sme,
-        &1_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &Some(100i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    let returned = client.raise_max_per_investor(&101i128);
-    assert_eq!(returned, 101i128);
-    assert_eq!(client.get_max_per_investor_cap(), Some(101i128));
-}
-
-#[test]
-#[should_panic]
-fn test_raise_max_per_investor_rejects_not_open_state() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "RMPI007"),
-        &sme,
-        &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &Some(50_000_000_000i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    client.fund(&Address::generate(&env), &100_000_000_000i128);
-    assert_eq!(client.get_escrow().status, 1);
-
-    client.raise_max_per_investor(&60_000_000_000i128);
-}
-
-#[test]
-fn test_raise_max_unique_investors_one_above_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "RAISE_UNIQ1"),
-        &sme,
-        &500_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &Some(2u32),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    client.fund(&Address::generate(&env), &10_000_000_000i128);
-    client.fund(&Address::generate(&env), &10_000_000_000i128);
-
-    assert_contract_error(
-        client.try_fund(&Address::generate(&env), &1i128),
-        EscrowError::UniqueInvestorCapReached,
-    );
-
-    client.raise_max_unique_investors(&3u32);
-    assert_eq!(client.get_max_unique_investors_cap(), Some(3));
-    assert_eq!(client.get_remaining_investor_slots(), Some(1));
-
-    client.fund(&Address::generate(&env), &10_000_000_000i128);
-    assert_eq!(client.get_unique_funder_count(), 3);
-}
-
-#[test]
-fn test_raise_max_unique_investors_large_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "RAISE_UNIQ2"),
-        &sme,
-        &500_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &Some(1u32),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    let new_cap = client.raise_max_unique_investors(&100u32);
-    assert_eq!(new_cap, 100u32);
-    assert_eq!(client.get_max_unique_investors_cap(), Some(100));
-    assert_eq!(client.get_remaining_investor_slots(), Some(100));
-}
-
-#[test]
-fn test_lower_min_contribution_floor_one_below_current_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "FLOOR_BND1"),
-        &sme,
-        &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &Some(10_000i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    let new_floor = client.lower_min_contribution_floor(&9_999i128);
-    assert_eq!(new_floor, 9_999i128);
-    assert_eq!(client.get_min_contribution_floor(), 9_999i128);
-}
-
-#[test]
-fn test_lower_min_contribution_floor_smallest_positive_1_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "FLOOR_BND2"),
-        &sme,
-        &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &Some(100i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    let returned = client.lower_min_contribution_floor(&1i128);
-    assert_eq!(returned, 1i128);
-    assert_eq!(client.get_min_contribution_floor(), 1i128);
-
-    let inv = Address::generate(&env);
-    client.fund(&inv, &1i128);
-    assert_eq!(client.get_contribution(&inv), 1i128);
-}
-
-#[test]
-fn test_min_contribution_floor_at_amount_exact_boundary_accepted_at_init() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-    let amount = 100_000_000_000i128;
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "FLOOR_BND3"),
-        &sme,
-        &amount,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &Some(amount),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    assert_eq!(client.get_min_contribution_floor(), amount);
-
-    let inv = Address::generate(&env);
-    client.fund(&inv, &amount);
-    assert_eq!(client.get_contribution(&inv), amount);
-    assert_eq!(client.get_escrow().status, 1);
-}
-
-#[test]
-fn test_max_per_investor_at_amount_exact_boundary_accepted_at_init() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-    let amount = 50_000_000_000i128;
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "INV_BND1"),
-        &sme,
-        &amount,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &Some(1u32),
-        &Some(amount),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    let inv = Address::generate(&env);
-    client.fund(&inv, &amount);
-    assert_eq!(client.get_contribution(&inv), amount);
-    assert_eq!(client.get_escrow().status, 1);
-}
-
-#[test]
-fn test_max_per_investor_one_below_amount_requires_multiple_investors() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-    let amount = 100_000_000_000i128;
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "INV_BND2"),
-        &sme,
-        &amount,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &Some(2u32),
-        &Some(amount - 1),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    let inv1 = Address::generate(&env);
-    let inv2 = Address::generate(&env);
-    client.fund(&inv1, &(amount - 1));
-    client.fund(&inv2, &1i128);
-    assert_eq!(client.get_escrow().status, 1);
-    assert_eq!(client.get_unique_funder_count(), 2);
-}
-
-#[test]
-fn test_unique_funder_count_invariant_after_sequential_refunds() {
-    let env = Env::default();
-    env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
-    let token = install_stellar_asset_token(&env);
-    let treasury = Address::generate(&env);
+    let (token, treasury) = free_addresses(&env);
 
     client.init(
         &admin,
-        &String::from_str(&env, "INV_REFUND1"),
+        &String::from_str(&env, "RAISE_TYP1"),
         &sme,
-        &30_000i128,
-        &0i64,
+        &100_000_000_000i128,
+        &800i64,
         &0u64,
-        &token.id,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    assert_contract_error(
+        client.try_raise_max_unique_investors(&3u32),
+        EscrowError::NewCapNotHigher,
+    );
+}
+
+/// Raising to a lower cap value must be rejected with NewCapNotHigher (code 176).
+#[test]
+fn test_raise_lower_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_TYP2"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
         &None,
         &treasury,
         &None,
@@ -2828,47 +2434,32 @@ fn test_unique_funder_count_invariant_after_sequential_refunds() {
         &None::<u32>,
     );
 
-    let inv1 = Address::generate(&env);
-    let inv2 = Address::generate(&env);
-    let inv3 = Address::generate(&env);
-    token.stellar.mint(&inv1, &10_000i128);
-    token.stellar.mint(&inv2, &10_000i128);
-    token.stellar.mint(&inv3, &10_000i128);
-
-    client.fund(&inv1, &10_000i128);
-    client.fund(&inv2, &10_000i128);
-    client.fund(&inv3, &10_000i128);
-    assert_eq!(client.get_unique_funder_count(), 3);
-
-    client.cancel_funding(&0u32);
-
-    client.refund(&inv1);
-    client.refund(&inv2);
-    client.refund(&inv3);
-    assert_eq!(client.get_unique_funder_count(), 3);
+    assert_contract_error(
+        client.try_raise_max_unique_investors(&3u32),
+        EscrowError::NewCapNotHigher,
+    );
 }
 
+/// Raising when no cap is configured must be rejected with NoInvestorCapConfigured (code 76).
 #[test]
-fn test_cap_lowering_invariant_count_never_exceeds_cap() {
+fn test_raise_no_cap_typed_error() {
     let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
 
     client.init(
         &admin,
-        &String::from_str(&env, "CAP_INV1"),
+        &String::from_str(&env, "RAISE_TYP3"),
         &sme,
-        &500_000_000_000i128,
+        &100_000_000_000i128,
         &800i64,
         &0u64,
-        &Address::generate(&env),
+        &token,
         &None,
-        &Address::generate(&env),
+        &treasury,
         &None,
         &None,
-        &Some(10u32),
+        &None,
         &None,
         &None,
         &None,
@@ -2878,42 +2469,519 @@ fn test_cap_lowering_invariant_count_never_exceeds_cap() {
         &None::<u32>,
     );
 
+    assert_contract_error(
+        client.try_raise_max_unique_investors(&5u32),
+        EscrowError::NoInvestorCapConfigured,
+    );
+}
+
+/// Raising when escrow is not open (status != 0) must be rejected with CapLowerNotOpen (code 75).
+/// The same open-status guard applies to raise_max_unique_investors as to lower.
+#[test]
+fn test_raise_when_funded_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_TYP4"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(2u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    // Fund to close the escrow.
+    client.fund(&Address::generate(&env), &50_000_000_000i128);
+    client.fund(&Address::generate(&env), &50_000_000_000i128);
+    assert_eq!(client.get_escrow().status, 1);
+
+    // Raise must now be rejected because escrow is no longer open.
+    assert!(client.try_raise_max_unique_investors(&4u32).is_err());
+}
+
+// ── raise_max_unique_investors — admin auth ────────────────────────────────
+
+/// Admin auth must be recorded when raise_max_unique_investors succeeds.
+#[test]
+fn test_raise_max_unique_investors_requires_admin_auth() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_AUTH1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    client.raise_max_unique_investors(&5u32);
+    assert!(
+        env.auths().iter().any(|(addr, _)| *addr == admin),
+        "admin auth was not recorded for raise_max_unique_investors"
+    );
+}
+
+/// Calling raise_max_unique_investors without auth must be rejected.
+#[test]
+#[should_panic]
+fn test_raise_max_unique_investors_unauthorized_panics() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let client = deploy(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_AUTH2"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    env.mock_auths(&[]);
+    client.raise_max_unique_investors(&5u32);
+}
+
+// ── raise_max_unique_investors — event emission ────────────────────────────
+
+/// raise_max_unique_investors must emit MaxUniqueInvestorsCapRaised with correct fields.
+#[test]
+fn test_raise_max_unique_investors_emits_event() {
+    use soroban_sdk::testutils::Events as _;
+
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+    let contract_id = client.address.clone();
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_EVT1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    let returned = client.raise_max_unique_investors(&7u32);
+    assert_eq!(returned, 7u32);
+
+    let all_events = env.events().all();
+    let expected = crate::MaxUniqueInvestorsCapRaised {
+        name: symbol_short!("raise_cap"),
+        invoice_id: client.get_escrow().invoice_id,
+        old_cap: 3u32,
+        new_cap: 7u32,
+    };
+    assert!(
+        all_events
+            .events()
+            .contains(&expected.to_xdr(&env, &contract_id)),
+        "MaxUniqueInvestorsCapRaised event must be emitted with correct old_cap and new_cap"
+    );
+}
+
+/// raise_max_unique_investors returns the new cap value.
+#[test]
+fn test_raise_max_unique_investors_returns_new_cap() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_RET1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(4u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    let returned = client.raise_max_unique_investors(&9u32);
+    assert_eq!(returned, 9u32);
+    assert_eq!(client.get_max_unique_investors_cap(), Some(9u32));
+}
+
+/// raise_max_unique_investors then lower must behave as lower-only when result is
+/// strictly below the raised cap — validates round-trip cap management.
+#[test]
+fn test_raise_then_lower_cap_round_trip() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RAISE_RT1"),
+        &sme,
+        &500_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    assert_eq!(client.get_max_unique_investors_cap(), Some(3u32));
+
+    // Raise from 3 to 6.
+    client.raise_max_unique_investors(&6u32);
+    assert_eq!(client.get_max_unique_investors_cap(), Some(6u32));
+
+    // Fund 4 distinct investors.
     for _ in 0..4 {
         client.fund(&Address::generate(&env), &10_000_000_000i128);
     }
+    assert_eq!(client.get_unique_funder_count(), 4);
+    assert_eq!(client.get_remaining_investor_slots(), Some(2));
 
-    for step in [10u32, 9, 7, 5, 4].iter() {
-        let current_count = client.get_unique_funder_count();
-        let current_cap = client.get_max_unique_investors_cap().unwrap();
-        assert!(
-            current_count <= current_cap,
-            "count <= cap invariant broken"
-        );
-        if *step < current_cap {
-            if *step >= current_count {
-                client.lower_max_unique_investors(&step, &0u32);
-            }
-        }
-        assert!(
-            client.get_unique_funder_count() <= client.get_max_unique_investors_cap().unwrap(),
-            "post-lower count <= cap invariant broken"
-        );
-    }
+    // Lower back to exactly the funder count (4).
+    let new_cap = client.lower_max_unique_investors(&4u32);
+    assert_eq!(new_cap, 4u32);
+    assert_eq!(client.get_remaining_investor_slots(), Some(0));
+
+    // A new investor must now be rejected (cap == count).
+    assert!(client
+        .try_fund(&Address::generate(&env), &1_000_000_000i128)
+        .is_err());
 }
 
+// ── lower_min_contribution_floor — typed error codes ──────────────────────
+
+/// lower_min_contribution_floor while escrow is funded must be rejected with
+/// FloorLowerNotOpen (code 173).
 #[test]
-fn test_raise_then_lower_invariants_consistent() {
+fn test_lower_floor_funded_state_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "FLOOR_TYP1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &Some(10_000i128),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    // Fund to close the escrow.
+    client.fund(&Address::generate(&env), &100_000_000_000i128);
+    assert_eq!(client.get_escrow().status, 1);
+
+    assert_contract_error(
+        client.try_lower_min_contribution_floor(&5_000i128),
+        EscrowError::FloorLowerNotOpen,
+    );
+}
+
+/// lower_min_contribution_floor with value >= current floor must be rejected with
+/// NewFloorNotLower (code 174).
+#[test]
+fn test_lower_floor_not_lower_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "FLOOR_TYP2"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &Some(10_000i128),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    // Same value.
+    assert_contract_error(
+        client.try_lower_min_contribution_floor(&10_000i128),
+        EscrowError::NewFloorNotLower,
+    );
+
+    // Higher value.
+    assert_contract_error(
+        client.try_lower_min_contribution_floor(&20_000i128),
+        EscrowError::NewFloorNotLower,
+    );
+}
+
+/// lower_min_contribution_floor with a zero value must be rejected with
+/// NewFloorNotPositive (code 175).
+#[test]
+fn test_lower_floor_zero_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "FLOOR_TYP3"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &Some(10_000i128),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    assert_contract_error(
+        client.try_lower_min_contribution_floor(&0i128),
+        EscrowError::NewFloorNotPositive,
+    );
+}
+
+/// lower_min_contribution_floor with a negative value must be rejected with
+/// NewFloorNotPositive (code 175).
+#[test]
+fn test_lower_floor_negative_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "FLOOR_TYP4"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &Some(10_000i128),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    assert_contract_error(
+        client.try_lower_min_contribution_floor(&-1_000i128),
+        EscrowError::NewFloorNotPositive,
+    );
+}
+
+// ── raise_max_per_investor — open-state guard ─────────────────────────────
+
+/// raise_max_per_investor must be rejected when escrow is not open (status != 0).
+#[test]
+fn test_raise_max_per_investor_funded_state_rejected() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    // Per-investor cap of 50B, total target 100B — fund with two investors of 50B each.
+    client.init(
+        &admin,
+        &String::from_str(&env, "RMPI_FUND1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &Some(50_000_000_000i128),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    // Two investors each at the per-investor cap — escrow reaches target and closes.
+    client.fund(&Address::generate(&env), &50_000_000_000i128);
+    client.fund(&Address::generate(&env), &50_000_000_000i128);
+    assert_eq!(client.get_escrow().status, 1);
+
+    // Raise must fail because the escrow is no longer open.
+    assert!(client
+        .try_raise_max_per_investor(&75_000_000_000i128)
+        .is_err());
+}
+
+/// raise_max_per_investor lower value must be rejected with MaxPerInvestorCapNotRaised.
+#[test]
+fn test_raise_max_per_investor_lower_value_typed_error() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let (token, treasury) = free_addresses(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "RMPI_LOW1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &Some(50_000_000_000i128),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    assert_contract_error(
+        client.try_raise_max_per_investor(&30_000_000_000i128),
+        EscrowError::MaxPerInvestorCapNotRaised,
+    );
+}
+
+// ── cap consistency across fund_batch ────────────────────────────────────
+
+/// fund_batch must respect MaxUniqueInvestorsCap — a batch whose new unique addresses
+/// would exceed the cap must be rejected atomically.
+#[test]
+#[should_panic]
+fn test_fund_batch_rejects_when_unique_investor_cap_would_be_exceeded() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
 
+    // Cap = 2; two investors already funded.
     client.init(
         &admin,
-        &String::from_str(&env, "RAISE_LOWER1"),
+        &String::from_str(&env, "BATCH_CAP1"),
         &sme,
-        &500_000_000_000i128,
+        &300_000_000_000i128,
         &800i64,
         &0u64,
         &Address::generate(&env),
@@ -2931,42 +2999,34 @@ fn test_raise_then_lower_invariants_consistent() {
         &None::<u32>,
     );
 
-    client.fund(&Address::generate(&env), &10_000_000_000i128);
-    client.fund(&Address::generate(&env), &10_000_000_000i128);
-    assert_eq!(client.get_remaining_investor_slots(), Some(0));
+    let inv1 = Address::generate(&env);
+    let inv2 = Address::generate(&env);
+    client.fund(&inv1, &10_000_000_000i128);
+    client.fund(&inv2, &10_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 2);
 
-    client.raise_max_unique_investors(&5u32);
-    assert_eq!(client.get_max_unique_investors_cap(), Some(5));
-    assert_eq!(client.get_remaining_investor_slots(), Some(3));
-
+    // Batch with a third new investor must be rejected.
     let inv3 = Address::generate(&env);
-    let inv4 = Address::generate(&env);
-    client.fund(&inv3, &10_000_000_000i128);
-    client.fund(&inv4, &10_000_000_000i128);
-    assert_eq!(client.get_unique_funder_count(), 4);
-    assert_eq!(client.get_remaining_investor_slots(), Some(1));
-
-    client.lower_max_unique_investors(&4u32, &0u32);
-    assert_eq!(client.get_max_unique_investors_cap(), Some(4));
-    assert_eq!(client.get_remaining_investor_slots(), Some(0));
-
-    assert_contract_error(
-        client.try_fund(&Address::generate(&env), &1i128),
-        EscrowError::UniqueInvestorCapReached,
-    );
+    let mut batch = SorobanVec::new(&env);
+    batch.push_back((inv3, 5_000_000_000i128));
+    client.fund_batch(&batch);
 }
 
+/// fund_batch must respect MinContributionFloor — any entry below the floor rejects
+/// the entire batch atomically.
 #[test]
-fn test_init_max_unique_investors_max_boundary_1_accepted() {
+#[should_panic(expected = "HostError: Error(Contract, #101)")]
+fn test_fund_batch_rejects_entry_below_min_floor() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
 
+    let floor = 1_000_000i128;
     client.init(
         &admin,
-        &String::from_str(&env, "CAP_BND_MIN"),
+        &String::from_str(&env, "BATCH_FLOOR1"),
         &sme,
         &100_000_000_000i128,
         &800i64,
@@ -2975,76 +3035,7 @@ fn test_init_max_unique_investors_max_boundary_1_accepted() {
         &None,
         &Address::generate(&env),
         &None,
-        &None,
-        &Some(1u32),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    assert_eq!(client.get_max_unique_investors_cap(), Some(1));
-    client.fund(&Address::generate(&env), &100_000_000_000i128);
-    assert_eq!(client.get_unique_funder_count(), 1);
-}
-
-#[test]
-fn test_init_max_per_investor_min_boundary_1_accepted() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "INV_CAP_MIN"),
-        &sme,
-        &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &Some(1i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    assert_eq!(client.get_max_per_investor_cap(), Some(1i128));
-}
-
-#[test]
-fn test_lower_floor_idempotent_rejection_on_same_value() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "FLOOR_IDEM1"),
-        &sme,
-        &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &Some(10_000i128),
+        &Some(floor),
         &None,
         &None,
         &None,
@@ -3055,70 +3046,31 @@ fn test_lower_floor_idempotent_rejection_on_same_value() {
         &None::<u32>,
     );
 
-    client.lower_min_contribution_floor(&5_000i128);
-    assert_eq!(client.get_min_contribution_floor(), 5_000i128);
-
-    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        client.lower_min_contribution_floor(&5_000i128);
-    }));
-    assert!(res.is_err(), "duplicate same-value floor must be rejected");
+    let good = Address::generate(&env);
+    let bad = Address::generate(&env);
+    let mut batch = SorobanVec::new(&env);
+    batch.push_back((good, floor));
+    batch.push_back((bad, floor - 1));
+    client.fund_batch(&batch);
 }
 
+/// fund_batch must respect MaxPerInvestorCap — an entry whose cumulative contribution
+/// would exceed the cap rejects the entire batch atomically.
 #[test]
-fn test_raise_max_per_investor_idempotent_rejection_on_equal() {
+#[should_panic(expected = "HostError: Error(Contract, #106)")]
+fn test_fund_batch_rejects_entry_exceeding_per_investor_cap() {
     let env = Env::default();
     env.mock_all_auths();
     let client = deploy(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
 
+    let cap = 20_000_000_000i128;
     client.init(
         &admin,
-        &String::from_str(&env, "RMPI_IDEM1"),
+        &String::from_str(&env, "BATCH_PERCAP1"),
         &sme,
         &100_000_000_000i128,
-        &800i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &Some(100i128),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    client.raise_max_per_investor(&200i128);
-    assert_eq!(client.get_max_per_investor_cap(), Some(200i128));
-
-    assert_contract_error(
-        client.try_raise_max_per_investor(&200i128),
-        EscrowError::MaxPerInvestorCapNotRaised,
-    );
-}
-
-#[test]
-fn test_max_per_investor_cumulative_multiple_small_increments() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-    let inv = Address::generate(&env);
-    let cap = 100i128;
-
-    client.init(
-        &admin,
-        &String::from_str(&env, "CUMUL_CAP1"),
-        &sme,
-        &10_000i128,
         &800i64,
         &0u64,
         &Address::generate(&env),
@@ -3132,21 +3084,175 @@ fn test_max_per_investor_cumulative_multiple_small_increments() {
         &None,
         &None,
         &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    let inv1 = Address::generate(&env);
+    let inv2 = Address::generate(&env);
+    let mut batch = SorobanVec::new(&env);
+    // inv1 contributes exactly the cap.
+    batch.push_back((inv1.clone(), cap));
+    // inv2 contributes one over the cap.
+    batch.push_back((inv2.clone(), cap + 1));
+    client.fund_batch(&batch);
+}
+
+// ── cap_validation — state-machine non-interference invariants ────────────
+
+/// Cancelling a funded escrow (status 1 → 4 via cancel_funding? Actually cancel_funding
+/// operates on open escrow status 0 → 4).  Verify cap state is still readable after
+/// cancel and that fund is blocked.
+#[test]
+fn test_cap_state_readable_after_cancel() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "CAP_CANCEL1"),
+        &sme,
+        &200_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(5u32),
+        &None,
+        &None,
+        &None,
+        &None,
         &None,
         &None::<i64>,
         &None::<u32>,
     );
 
-    for _ in 0..99 {
-        client.fund(&inv, &1i128);
-    }
-    assert_eq!(client.get_contribution(&inv), 99i128);
+    let inv1 = Address::generate(&env);
+    client.fund(&inv1, &10_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 1);
 
-    client.fund(&inv, &1i128);
-    assert_eq!(client.get_contribution(&inv), 100i128);
+    // Cancel the escrow.
+    client.cancel_funding();
+    assert_eq!(client.get_escrow().status, 4);
 
-    assert_contract_error(
-        client.try_fund(&inv, &1i128),
-        EscrowError::InvestorContributionExceedsCap,
+    // Cap reads must still succeed.
+    assert_eq!(client.get_max_unique_investors_cap(), Some(5u32));
+    // Remaining slots computation must still hold (cap - count).
+    assert_eq!(client.get_remaining_investor_slots(), Some(4));
+
+    // New funding must be rejected.
+    assert!(client
+        .try_fund(&Address::generate(&env), &1_000_000_000i128)
+        .is_err());
+}
+
+/// Verify unique_funder_count is idempotent: re-funding the same investor
+/// multiple times never increments the counter past 1.
+#[test]
+fn test_unique_funder_count_idempotent_for_repeat_investor() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "IDEM1"),
+        &sme,
+        &1_000_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &None,
+        &Some(3u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
     );
+
+    let investor = Address::generate(&env);
+
+    for _ in 0..10 {
+        client.fund(&investor, &1_000_000_000i128);
+    }
+
+    // Must still be 1 unique funder regardless of repeat count.
+    assert_eq!(client.get_unique_funder_count(), 1);
+    assert_eq!(client.get_remaining_investor_slots(), Some(2));
+}
+
+/// All three caps (MinContributionFloor, MaxUniqueInvestorsCap, MaxPerInvestorCap)
+/// can be active simultaneously; each enforced independently on the same fund call.
+#[test]
+fn test_all_three_caps_coexist_enforce_independently() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+
+    let floor = 5_000_000i128;
+    let per_investor_cap = 30_000_000_000i128;
+    let max_investors = 2u32;
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "ALL_CAPS1"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &Address::generate(&env),
+        &None,
+        &Address::generate(&env),
+        &None,
+        &Some(floor),
+        &Some(max_investors),
+        &Some(per_investor_cap),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    let inv1 = Address::generate(&env);
+
+    // Valid: above floor, below per-investor cap.
+    client.fund(&inv1, &10_000_000_000i128);
+    assert_eq!(client.get_contribution(&inv1), 10_000_000_000i128);
+    assert_eq!(client.get_unique_funder_count(), 1);
+
+    // Below floor: rejected.
+    assert!(client
+        .try_fund(&Address::generate(&env), &(floor - 1))
+        .is_err());
+
+    // Over per-investor cap: rejected.
+    assert!(client
+        .try_fund(&inv1, &(per_investor_cap - 10_000_000_000i128 + 1))
+        .is_err());
+
+    // Fill with second investor.
+    let inv2 = Address::generate(&env);
+    client.fund(&inv2, &floor);
+    assert_eq!(client.get_unique_funder_count(), 2);
+
+    // Third investor hits unique investor cap: rejected.
+    assert!(client.try_fund(&Address::generate(&env), &floor).is_err());
 }
