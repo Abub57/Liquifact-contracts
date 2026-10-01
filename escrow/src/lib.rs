@@ -7436,7 +7436,7 @@ impl LiquifactEscrow {
         Self::propose_admin(env.clone(), new_admin.clone(), None);
         DeprecatedTransferAdminUsed {
             name: symbol_short!("depr_xfer"),
-            invoice_id,
+            invoice_id: escrow.invoice_id,
             proposed_address: new_admin,
         }
         .publish(&env);
@@ -7508,11 +7508,26 @@ impl LiquifactEscrow {
     /// - [`EscrowError::NoPendingAdmin`] if no proposal is pending (including a repeated
     ///   recovery after a successful recovery).
     /// - [`EscrowError::AdminRecoveryNotExpired`] if the proposal timelock has not elapsed.
+    /// - [`EscrowError::AdminNonceMismatch`] if `expected_nonce` is stale, duplicated, or
+    ///   out of order. The nonce is consumed atomically with the successful recovery.
     ///
     /// # Events
     /// Emits [`AdminRecoveredEvent`] (topic: `adm_rec`).
-    pub fn recover_admin(env: Env, reason: String) -> Address {
+    pub fn recover_admin(env: Env, reason: String, expected_nonce: u32) -> Address {
         let escrow = Self::load_escrow_require_admin(&env);
+        // Validate the nonce before any other state transition, but defer writing its increment
+        // until every recoverability precondition passes. This keeps rejected/timing-boundary
+        // attempts retryable and makes a delayed recovery unable to clear a newer proposal.
+        let current_nonce: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AdminNonce)
+            .unwrap_or(0);
+        ensure(
+            &env,
+            current_nonce == expected_nonce,
+            EscrowError::AdminNonceMismatch,
+        );
 
         let pending: Option<Address> = env.storage().instance().get(&DataKey::PendingAdmin);
         ensure(&env, pending.is_some(), EscrowError::NoPendingAdmin);
@@ -7525,6 +7540,10 @@ impl LiquifactEscrow {
             .unwrap_or_else(|| fail(&env, EscrowError::AdminRecoveryNotExpired));
         let now = env.ledger().timestamp();
         ensure(&env, now > expiry, EscrowError::AdminRecoveryNotExpired);
+
+        // All rejection paths above are read-only; consume exactly once immediately before the
+        // pending keys are removed and the recovery event is emitted.
+        Self::consume_admin_nonce(&env, expected_nonce);
 
         env.storage().instance().remove(&DataKey::PendingAdmin);
         env.storage()
