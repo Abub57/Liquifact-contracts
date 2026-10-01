@@ -262,6 +262,78 @@ fn test_max_per_investor_cap_blocks_excess_principal() {
 }
 
 #[test]
+fn test_batch_funding_failure_rolls_back_and_retry_recovers() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let client = deploy(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    let token = install_stellar_asset_token(&env);
+    let treasury = Address::generate(&env);
+
+    client.init(
+        &admin,
+        &String::from_str(&env, "CAP_RECOVERY"),
+        &sme,
+        &100_000_000_000i128,
+        &800i64,
+        &0u64,
+        &token.id,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &Some(2u32),
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    let investor_a = Address::generate(&env);
+    let investor_b = Address::generate(&env);
+    let amount_a = 40_000_000_000i128;
+    let amount_b = 60_000_000_000i128;
+    token.stellar.mint(&investor_a, &amount_a);
+
+    let mut entries = SorobanVec::new(&env);
+    entries.push_back((investor_a.clone(), amount_a));
+    entries.push_back((investor_b.clone(), amount_b));
+
+    // The first transfer executes before the second investor's balance check fails.
+    assert_contract_error(
+        client.try_fund_batch(&entries),
+        crate::EscrowError::InboundInsufficientTokenBalanceBeforeTransfer,
+    );
+
+    // The failed batch must roll back both escrow writes and the earlier token transfer.
+    assert_eq!(client.get_unique_funder_count(), 0);
+    assert_eq!(client.get_contribution(&investor_a), 0);
+    assert_eq!(client.get_contribution(&investor_b), 0);
+    assert_eq!(client.get_escrow().funded_amount, 0);
+    assert_eq!(client.get_escrow().status, 0);
+    assert_eq!(token.token.balance(&investor_a), amount_a);
+    assert_eq!(token.token.balance(&investor_b), 0);
+    assert_eq!(token.token.balance(&client.address), 0);
+
+    // Resolve the dependency failure and retry the identical batch.
+    token.stellar.mint(&investor_b, &amount_b);
+    client.fund_batch(&entries);
+
+    assert_eq!(client.get_unique_funder_count(), 2);
+    assert_eq!(client.get_contribution(&investor_a), amount_a);
+    assert_eq!(client.get_contribution(&investor_b), amount_b);
+    assert_eq!(client.get_escrow().funded_amount, amount_a + amount_b);
+    assert_eq!(client.get_escrow().status, 1);
+    assert_eq!(token.token.balance(&investor_a), 0);
+    assert_eq!(token.token.balance(&investor_b), 0);
+    assert_eq!(token.token.balance(&client.address), amount_a + amount_b);
+}
+
+#[test]
 #[should_panic]
 fn test_init_zero_max_per_investor_panics() {
     let env = Env::default();
