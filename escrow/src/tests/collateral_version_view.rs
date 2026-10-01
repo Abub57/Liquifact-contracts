@@ -6,11 +6,13 @@
 //! - Result is consistent with [`LiquifactEscrow::get_version`] (both read the same key).
 //! - No auth required (pure read).
 //! - Idempotency: calling multiple times returns the same value.
+//! - Failure recovery: reads are deterministic and never mutate state, so a
+//!   failed read (or a read interleaved with a failed write) leaves storage intact.
 
 use super::super::{LiquifactEscrow, LiquifactEscrowClient, SCHEMA_VERSION};
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Register and return a fresh, uninitialised escrow client.
 fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
@@ -43,15 +45,13 @@ fn deploy_and_init(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
         &None,
         &None,
         &None,
-        &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     (client, admin, sme)
 }
 
-// ── Core behaviour ───────────────────────────────────────────────────────────
+// ── Core behaviour ────────────────────────────────────────────────────────────
 
 /// Before `init`, `get_collateral_version` must return `0` (sane default).
 #[test]
@@ -135,6 +135,7 @@ fn test_get_collateral_version_idempotent_before_init() {
     let v1 = client.get_collateral_version();
     let v2 = client.get_collateral_version();
     let v3 = client.get_collateral_version();
+
     assert_eq!(v1, v2);
     assert_eq!(v2, v3);
     assert_eq!(v1, 0);
@@ -149,6 +150,7 @@ fn test_get_collateral_version_idempotent_after_init() {
     let v1 = client.get_collateral_version();
     let v2 = client.get_collateral_version();
     let v3 = client.get_collateral_version();
+
     assert_eq!(v1, v2);
     assert_eq!(v2, v3);
     assert_eq!(v1, SCHEMA_VERSION);
@@ -179,18 +181,18 @@ fn test_get_collateral_version_equals_expected_schema_version() {
 fn test_get_collateral_version_unchanged_after_record_collateral() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, sme) = deploy_and_init(&env);
+    let (client, _admin, _sme) = deploy_and_init(&env);
 
     let before = client.get_collateral_version();
 
     // Record a collateral commitment.
-    client.record_sme_collateral_commitment(
-        &soroban_sdk::Symbol::new(&env, "GOLD"),
-        &500_000i128,
-    );
+    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
 
     let after = client.get_collateral_version();
-    assert_eq!(before, after, "recording collateral must not change the schema version");
+    assert_eq!(
+        before, after,
+        "recording collateral must not change the schema version"
+    );
 }
 
 /// Clearing a collateral commitment must not alter the version.
@@ -198,18 +200,18 @@ fn test_get_collateral_version_unchanged_after_record_collateral() {
 fn test_get_collateral_version_unchanged_after_clear_collateral() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, sme) = deploy_and_init(&env);
+    let (client, _admin, _sme) = deploy_and_init(&env);
 
-    client.record_sme_collateral_commitment(
-        &soroban_sdk::Symbol::new(&env, "GOLD"),
-        &500_000i128,
-    );
+    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
 
     let before = client.get_collateral_version();
     client.clear_sme_collateral_commitment();
     let after = client.get_collateral_version();
 
-    assert_eq!(before, after, "clearing collateral must not change the schema version");
+    assert_eq!(
+        before, after,
+        "clearing collateral must not change the schema version"
+    );
 }
 
 /// Setting the collateral limit must not alter the version.
@@ -223,5 +225,75 @@ fn test_get_collateral_version_unchanged_after_set_collateral_limit() {
     client.set_collateral_limit(&1_000_000i128);
     let after = client.get_collateral_version();
 
-    assert_eq!(before, after, "set_collateral_limit must not change the schema version");
+    assert_eq!(
+        before, after,
+        "set_collateral_limit must not change the schema version"
+    );
+}
+
+// ── Failure recovery / determinism ────────────────────────────────────────────
+
+/// A read must never mutate storage: repeated reads after a failed write attempt
+/// must return the same value as before the failure, proving recovery is
+/// deterministic and no partial state is persisted.
+#[test]
+fn test_get_collateral_version_stable_across_failed_write() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    let before = client.get_collateral_version();
+
+    // Attempt an invalid write (zero amount is rejected by validation).
+    // The call must fail without mutating the version key.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &0i128);
+    }));
+    assert!(result.is_err(), "invalid collateral write must be rejected");
+
+    // Version must be unchanged and reads must remain deterministic.
+    let after = client.get_collateral_version();
+    assert_eq!(
+        before, after,
+        "failed write must not alter the schema version"
+    );
+    assert_eq!(client.get_collateral_version(), after);
+}
+
+/// Reads must be deterministic across repeated invocations even when interleaved
+/// with state-mutating operations that succeed.
+#[test]
+fn test_get_collateral_version_deterministic_across_mutations() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    let baseline = client.get_collateral_version();
+
+    client.set_collateral_limit(&1_000_000i128);
+    assert_eq!(client.get_collateral_version(), baseline);
+
+    client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
+    assert_eq!(client.get_collateral_version(), baseline);
+
+    client.clear_sme_collateral_commitment();
+    assert_eq!(client.get_collateral_version(), baseline);
+
+    // Final read must equal the very first read — no drift, no partial state.
+    assert_eq!(client.get_collateral_version(), baseline);
+}
+
+/// A read on a fresh, uninitialised contract is deterministic and recoverable:
+/// it returns the default without panicking, so callers can safely retry.
+#[test]
+fn test_get_collateral_version_recoverable_before_init() {
+    let env = Env::default();
+    let client = deploy(&env);
+
+    // Multiple reads before init must all succeed and agree.
+    let v1 = client.get_collateral_version();
+    let v2 = client.get_collateral_version();
+    assert_eq!(v1, 0);
+    assert_eq!(v1, v2);
+    assert_eq!(v1, client.get_version());
 }
