@@ -193,18 +193,7 @@ pub const EVENT_SCHEMA_VERSION: u32 = 1;
 /// Revocation via [`LiquifactEscrow::revoke_attestation_digest`] does not consume a slot.
 pub const MAX_ATTESTATION_APPEND_ENTRIES: u32 = 32;
 
-/// Minimum configurable cap on the attestation append log.
-pub const MIN_ATTESTATION_LIMIT: u32 = 1;
-
-/// Maximum configurable cap on the attestation append log.
-pub const MAX_ATTESTATION_LIMIT: u32 = MAX_ATTESTATION_APPEND_ENTRIES;
-
-/// Default cap used when [`LiquifactEscrow::set_attestation_limit`] has never
-/// been called.
-pub const DEFAULT_ATTESTATION_LIMIT: u32 = MAX_ATTESTATION_APPEND_ENTRIES;
-
-/// Maximum number of digests that can be appended in a single
-/// [`LiquifactEscrow::append_attestation_digests`] call.
+/// Maximum number of digests accepted by a single `append_attestation_digests` call.
 pub const MAX_ATTESTATION_APPEND_BATCH: u32 = 32;
 
 /// Maximum number of indices that can be revoked in a single batch call.
@@ -1894,6 +1883,28 @@ pub struct SettlementResult {
     pub settle_pool: i128,
     /// Ledger timestamp at which settlement was recorded.
     pub settled_at: u64,
+}
+
+/// Read-only snapshot of the attestation configuration and live state.
+///
+/// Returned by [`LiquifactEscrow::get_attestation_config`].  The view is safe to call
+/// before initialization and after any number of attestation operations because it reads
+/// the persisted values with the same default semantics the contract uses elsewhere.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct AttestationConfig {
+    /// Maximum append-log capacity enforced by `append_attestation_digest`.
+    pub max_append_entries: u32,
+    /// Maximum number of revisions accepted by `revoke_attestation_digests` in one call.
+    pub max_revoke_batch: u32,
+    /// Maximum number of digests accepted by `append_attestation_digests` in one call.
+    pub max_append_batch: u32,
+    /// Maximum number of rows returned in a single read-page view.
+    pub max_read_page: u32,
+    /// Whether a primary attestation hash has been bound once and remains immutable.
+    pub primary_bound: bool,
+    /// Current length of the append-only audit log (revokes do not remove entries).
+    pub append_log_length: u32,
 }
 
 /// Read-only snapshot of all settlement-relevant configuration.
@@ -4190,6 +4201,30 @@ impl LiquifactEscrow {
             attestation_log_length: attestation_append_log.len(),
             paused: Self::is_paused(env.clone()),
             protocol_fee_bps: Self::get_protocol_fee_bps(env.clone()),
+        }
+    }
+
+    /// Read-only snapshot of the attestation configuration and live state.
+    ///
+    /// This view is deterministic for both pre-init and post-init states because it
+    /// reads the same defaults and storage keys the rest of the attestation API uses.
+    /// It never mutates storage and therefore cannot leave any partially updated state
+    /// behind if an external caller retries or observes the result.
+    pub fn get_attestation_config(env: Env) -> AttestationConfig {
+        let primary_bound = env
+            .storage()
+            .instance()
+            .get::<DataKey, BytesN<32>>(&DataKey::PrimaryAttestationHash)
+            .is_some();
+        let append_log_length = Self::get_attestation_append_log(env.clone()).len() as u32;
+
+        AttestationConfig {
+            max_append_entries: MAX_ATTESTATION_APPEND_ENTRIES,
+            max_revoke_batch: MAX_ATTESTATION_REVOKE_BATCH,
+            max_append_batch: MAX_ATTESTATION_APPEND_BATCH,
+            max_read_page: MAX_ATTESTATION_READ_PAGE,
+            primary_bound,
+            append_log_length,
         }
     }
 
