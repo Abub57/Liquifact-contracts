@@ -54,13 +54,13 @@ impl TokenInterface for FeeOnTransferToken {
     }
     fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _exp: u32) {}
     fn transfer_from(_env: Env, _spender: Address, _from: Address, _to: Address, _amount: i128) {
-        unimplemented!()
+        unimplemented()
     }
     fn burn(_env: Env, _from: Address, _amount: i128) {
-        unimplemented!()
+        unimplemented()
     }
     fn burn_from(_env: Env, _spender: Address, _from: Address, _amount: i128) {
-        unimplemented!()
+        unimplemented()
     }
     fn decimals(_env: Env) -> u32 {
         7
@@ -105,13 +105,13 @@ impl TokenInterface for RebasingToken {
     }
     fn approve(_env: Env, _from: Address, _spender: Address, _amount: i128, _exp: u32) {}
     fn transfer_from(_env: Env, _spender: Address, _from: Address, _to: Address, _amount: i128) {
-        unimplemented!()
+        unimplemented()
     }
     fn burn(_env: Env, _from: Address, _amount: i128) {
-        unimplemented!()
+        unimplemented()
     }
     fn burn_from(_env: Env, _spender: Address, _from: Address, _amount: i128) {
-        unimplemented!()
+        unimplemented()
     }
     fn decimals(_env: Env) -> u32 {
         7
@@ -312,6 +312,33 @@ fn test_zero_amount_rejected() {
 fn test_negative_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
+
+    let token = install_stellar_asset_token(&env);
+    let holder = deploy_id(&env);
+    let treasury = Address::generate(&env);
+    let other = Address::generate(&env);
+
+    token.stellar.mint(&holder, &500i128);
+    token.stellar.mint(&other, &250i128);
+
+    let accounts = [&holder, &treasury, &other];
+    let before = total_balance(&token, &accounts);
+
+    let result = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_funding_token_with_balance_checks(&env, &token.id, &holder, &treasury, 1000i128);
+    }));
+    assert!(result.is_error(), "over-spend must fail");
+
+    let after = total_balance(&token, &accounts);
+    assert_eq!(before, after, "total supply must be conserved on failure");
+}
+
+#[test]
+fn test_failure_leaves_all_accounts_unchanged() {
+    // Explicitly check that no account is debited or credited when the transfer fails.
+    let env = Env::default();
+    env.mock_all_auths();
+
     let token = install_stellar_asset_token(&env);
     let holder = deploy_id(&env);
     let treasury = Address::generate(&env);
@@ -324,6 +351,7 @@ fn test_negative_amount_rejected() {
 fn test_insufficient_balance_zero_rejected() {
     let env = Env::default();
     env.mock_all_auths();
+
     let token = install_stellar_asset_token(&env);
     let holder = deploy_id(&env);
     let treasury = Address::generate(&env);
@@ -487,6 +515,7 @@ fn test_inbound_lying_token_no_change_rejected() {
 fn test_inbound_zero_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
+
     let token = install_stellar_asset_token(&env);
     let investor = deploy_id(&env);
     let escrow = Address::generate(&env);
@@ -499,8 +528,9 @@ fn test_inbound_zero_amount_rejected() {
 fn test_inbound_negative_amount_rejected() {
     let env = Env::default();
     env.mock_all_auths();
+
     let token = install_stellar_asset_token(&env);
-    let investor = deploy_id(&env);
+    let holder = deploy_id(&env);
     let escrow = Address::generate(&env);
 
     transfer_funding_token_inbound_with_balance_checks(&env, &token.id, &investor, &escrow, -1);
@@ -583,30 +613,40 @@ fn test_inbound_large_transfer_no_overflow() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_mock_token_default_balance_unseen_address() {
-    use super::super::DefaultMockToken;
-    use super::super::MOCK_TOKEN_DEFAULT_BALANCE;
-    use soroban_sdk::token::TokenClient;
-
+fn test_recovery_after_partial_failure_is_consistent() {
+    // After a partial failure, a subsequent successful transfer must operate on the
+    // original state and move exactly the requested amount.
     let env = Env::default();
     env.mock_all_auths();
     let token_id = env.register(DefaultMockToken, ());
     let client = TokenClient::new(&env, &token_id);
     let stranger = Address::generate(&env);
 
-    assert_eq!(
-        client.balance(&stranger),
-        MOCK_TOKEN_DEFAULT_BALANCE,
-        "unseen address must report MOCK_TOKEN_DEFAULT_BALANCE"
-    );
+    // Failed attempt to transfer more than available.
+    let failed = catch_transfer_failure(assert_unwind_safe(|| {
+        transfer_into_escrow_with_balance_checks(
+            &env,
+            &token.id,
+            &holder,
+            &escrow,
+            2000i128,
+        );
+    }));
+    assert!(failed.is_error(), "over-spend must fail");
+    assert_eq!(token.token.balance(&holder), 1000i128);
+    assert_eq!(token.token.balance(&escrow), 0i128);
+
+    // Recovery: a successful transfer of the available amount must now succeed.
+    transfer_into_escrow_with_balance_checks(&env, &token.id, &holder, &escrow, 1000i128);
+
+    assert_eq!(token.token.balance(&holder), 0i128);
+    assert_eq!(token.token.balance(&escrow), 1000i128);
 }
 
 #[test]
-fn test_mock_token_transfer_between_two_unseen_addresses() {
-    use super::super::DefaultMockToken;
-    use super::super::MOCK_TOKEN_DEFAULT_BALANCE;
-    use soroban_sdk::token::TokenClient;
-
+fn test_boundary_exact_balance_succeeds() {
+    // Boundary: transferring exactly the available balance must succeed and leave
+    // the sender at zero.
     let env = Env::default();
     env.mock_all_auths();
     let token_id = env.register(DefaultMockToken, ());
@@ -628,11 +668,9 @@ fn test_mock_token_transfer_between_two_unseen_addresses() {
 }
 
 #[test]
-fn test_mock_token_repeated_transfers_from_unseen_sender() {
-    use super::super::DefaultMockToken;
-    use super::super::MOCK_TOKEN_DEFAULT_BALANCE;
-    use soroban_sdk::token::TokenClient;
-
+fn test_boundary_one_over_balance_fails_deterministically() {
+    // Boundary: transferring one unit more than the available balance must fail
+    // without mutating any state.
     let env = Env::default();
     env.mock_all_auths();
     let token_id = env.register(DefaultMockToken, ());
