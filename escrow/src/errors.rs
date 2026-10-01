@@ -130,12 +130,40 @@ pub enum EscrowError {
     FundingTokenScaleNotSet = 245,
 
     // ------------------------------------------------------------------------------
-    // Attestation Validation Errors (250..259)
+    // Failure Recovery Errors (250..259)
     // ------------------------------------------------------------------------------
-    /// Attestation payload failed structural or semantic validation.
-    AttestationInvalid = 250,
-    /// An attestation with the same identifier has already been recorded.
-    AttestationDuplicate = 251,
-    /// Attestation value fell outside the accepted inclusive bounds.
-    AttestationOutOfBounds = 252,
+    /// A recovery operation was requested but no recovery state was recorded for
+    /// the escrow instance. Callers must not assume a recovery is in progress.
+    NoRecoveryInProgress = 250,
+    /// A recovery operation was requested while another recovery is already in
+    /// progress. Concurrent or duplicate recovery attempts must be rejected so
+    /// that state transitions remain deterministic.
+    RecoveryAlreadyInProgress = 251,
+    /// The recovery attempt referenced a checkpoint or snapshot that does not
+    /// exist or has already been consumed. Recovery must be idempotent and
+    /// observable; replaying a consumed checkpoint is unsafe.
+    RecoveryCheckpointNotFound = 252,
+    /// The recovery attempt referenced a checkpoint that has already been
+    /// finalized. Finalized checkpoints are immutable and cannot be re-applied.
+    RecoveryCheckpointAlreadyFinalized = 253,
+    /// The recovery attempt was rejected because the recorded recovery state is
+    /// inconsistent with the current escrow state (e.g. status or balances
+    /// diverged). This prevents silent data loss during partial failure.
+    RecoveryStateInconsistent = 254,
+    /// The recovery attempt was rejected because the supplied recovery reason
+    /// was empty or otherwise invalid. Recovery must be auditable.
+    InvalidRecoveryReason = 255,
+    /// The recovery attempt was rejected because the caller is not authorized to
+    /// perform recovery for this escrow instance.
+    RecoveryUnauthorized = 256,
+    /// The recovery attempt was rejected because the escrow is not in a state
+    /// that permits recovery (e.g. already settled or cancelled).
+    RecoveryNotAllowedInCurrentState = 257,
+    /// The recovery attempt exceeded the maximum number of retries allowed for
+    /// a single recovery cycle. Retries must be bounded to remain deterministic.
+    RecoveryRetryLimitExceeded = 258,
+    /// The recovery attempt failed while applying a state transition. The
+    /// escrow remains in its previous consistent state and the failure is
+    /// observable to the caller.
+    RecoveryTransitionFailed = 259,
 }
