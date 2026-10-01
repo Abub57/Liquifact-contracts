@@ -5,14 +5,35 @@
 // coverage (including DataKey::Version immutability, historical-version sweeps,
 // and auth-first ordering) lives in the anchoring suite in tests/admin.rs.
 //
-// Invariants under test:
-//   - migrate() is auth-gated and only the admin may call it.
-//   - migrate() is idempotent and deterministic for valid, invalid,
-//     duplicate, and boundary inputs.
-//   - Failed migrations must not mutate the stored schema version.
-//   - Errors are typed and diagnosable without leaking sensitive data.
+// Determinism invariants exercised here:
+//   * migrate() is a pure state-transition: it either advances the stored
+//     schema version exactly once or returns a typed error without mutating
+//     any persisted state. No partial writes are possible because the version
+//     bump is the final storage operation in the success path.
+//   * Error branches are ordered deterministically (auth -> mismatch ->
+//     already-current -> no-path) so retries observe the same error for the
+//     same inputs.
+//   * Failed migrations leave DataKey::Version untouched, so a caller can
+//     safely retry with corrected arguments without a recovery step.
 
 use super::*;
+
+/// Assert that a failed migrate() call did not mutate the stored schema
+/// version. This is the core recovery invariant: a rejected migration must be
+/// a no-op so retries are safe and no user data is lost.
+fn assert_version_unchanged(env: &Env, contract_id: &Address, expected: u32) {
+    env.as_contract(contract_id, || {
+        let stored: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Version)
+            .expect("version must remain persisted after failed migrate");
+        assert_eq!(
+            stored, expected,
+            "failed migrate must not mutate DataKey::Version"
+        );
+    });
+}
 
 /// Calling migrate(stored_version - 1) with the correct stored version
 /// must raise MigrationVersionMismatch (stored != from_version).
@@ -64,15 +85,9 @@ fn test_migration_version_mismatch() {
         EscrowError::MigrationVersionMismatch,
     );
 
-    // Post: failed migration must not mutate the stored version.
-    let stored_after = env.as.contract(&contract_id, || {
-        env.storage().instance().get::<DataKey, u32>(&DataKey::Version)
-    });
-    assert_eq(
-        stored_after,
-        Some(SCHEMA_VERSION),
-        "failed migration must not mutate the stored schema version",
-    );
+    // Recovery invariant: the rejected migration must not have advanced or
+    // otherwise mutated the stored version, so a corrected retry is safe.
+    assert_version_unchanged(&env, &client.address, SCHEMA_VERSION);
 }
 
 /// Calling migrate(SCHEMA_VERSION) with stored=SCHEMA_VERSION must raise
@@ -114,20 +129,13 @@ fn test_already_current_schema_version() {
         EscrowError::AlreadyCurrentSchemaVersion,
     );
 
-    // Repeated duplicate call must be deterministic and not mutate state.
+    // Idempotent rejection: retrying the same call yields the same error and
+    // leaves the version untouched.
     assert_contract_error(
         client.try_migrate(&SCHEMA_VERSION),
         EscrowError::AlreadyCurrentSchemaVersion,
     );
-
-    let stored_after = env.as_contract(&contract_id, || {
-        env.storage().instance().get::<DataKey, u32>(&DataKey::Version)
-    });
-    assert_eq(
-        stored_after,
-        Some(SCHEMA_VERSION),
-        "duplicate migration must not mutate the stored schema version",
-    );
+    assert_version_unchanged(&env, &client.address, SCHEMA_VERSION);
 }
 
 /// Calling migrate(1) when stored version is manually set to 1 must raise
@@ -168,13 +176,7 @@ fn test_no_migration_path() {
 
     assert_contract_error(client.try_migrate(&1u32), EscrowError::NoMigrationPath);
 
-    // Failed migration must not mutate the stored version.
-    let stored_after = env.as_contract(&contract_id, || {
-        env.storage().instance().get::<DataKey, u32>(&DataKey::Version)
-    });
-    assert_eq(
-        stored_after,
-        Some(1u32),
-        "failed migration must not mutate the stored schema version",
-    );
+    // The manually-set version must survive the failed migration unchanged so
+    // the contract remains in a known, recoverable state.
+    assert_version_unchanged(&env, &contract_id, 1u32);
 }

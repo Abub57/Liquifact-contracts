@@ -1212,6 +1212,17 @@ pub enum DataKey {
     /// Stored cross-contract callback context ([`CallbackContext`]) keyed by invocation nonce.
     /// Binds expected origin address, invocation nonce, and lifecycle phase.
     CallbackContext(u64),
+    /// When true, the escrow has an active dispute that blocks close finalization.
+    /// Absent ⇒ `false` (no dispute). **Additive key (ADR-007):** absent on legacy instances
+    /// reads as `false`. Written by the dispute lifecycle (admin/off-chain) and checked by
+    /// [`LiquifactEscrow::close_escrow`].
+    Dispute,
+    /// One-shot flag marking the escrow as closed by [`LiquifactEscrow::close_escrow`].
+    /// Absent ⇒ not closed. Written once; a second close attempt fails with
+    /// [`CloseError::AlreadyClosed`] before any state mutation.
+    Closed,
+    /// Immutable [`CloseMetadata`] captured at close time. Absent ⇒ not closed.
+    CloseMetadata,
 }
 
 // --- Data types ---
