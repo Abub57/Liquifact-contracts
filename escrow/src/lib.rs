@@ -206,6 +206,133 @@ pub const MAX_ATTESTATION_REVOKE_BATCH: u32 = 32;
 /// admin-batch API surface.
 pub const MAX_BUMP_TTL_BATCH: u32 = 32;
 
+/// Errors specific to escrow close finalization.
+#[contracterror]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CloseError {
+    /// The caller is not the configured admin.
+    NotAuthorized = 0,
+    /// The escrow was not initialized.
+    NotInitialized = 1,
+    /// The escrow has already been closed.
+    AlreadyClosed = 2,
+    /// The escrow still holds a token balance.
+    ActiveBalance = 3,
+    /// The escrow has an active dispute.
+    ActiveDispute = 4,
+}
+
+/// Metadata captured when an escrow is finalized.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CloseMetadata {
+    pub admin: Address,
+    pub timestamp: u64,
+    pub sequence: u32,
+}
+
+/// Event emitted when an escrow is closed.
+#[contractevent]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CloseFinalizedEvt {
+    #[topic]
+    pub name: Symbol,
+    pub metadata: CloseMetadata,
+}
+
+/// Storage key that marks the escrow as closed (one-shot flag).
+const CLOSED_KEY: &str = "EscrowClosed";
+/// Storage key that holds close metadata.
+const CLOSE_METADATA_KEY: &str = "CloseMetadata";
+
+#[contractimpl]
+impl LiquifactEscrow {
+    /// Finalizes the escrow after all balance and dispute obligations have settled.
+    ///
+    /// # Preconditions
+    /// - Only the current escrow admin may close.
+    /// - The escrow's funding-token balance must be zero.
+    /// - There must be no active dispute.
+    /// - The escrow must not already be closed.
+    ///
+    /// # Effects
+    /// - Marks the escrow as closed (one-shot).
+    /// - Stores [`CloseMetadata`].
+    /// - Emits a [`CloseFinalizedEvt`].
+    pub fn close_escrow(env: Env) {
+        let escrow: InvoiceEscrow = env
+            .storage()
+            .instance()
+            .get(&DataKey::Escrow)
+            .unwrap_or_else(|| panic_with_error!(&env, CloseError::NotInitialized));
+        let admin = escrow.admin;
+        admin.require_auth();
+
+        if env.storage().instance().has(&Symbol::new(&env, CLOSED_KEY)) {
+            panic_with_error!(&env, CloseError::AlreadyClosed);
+        }
+
+        let funding_token: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::FundingToken)
+            .unwrap_or_else(|| panic_with_error!(&env, CloseError::NotInitialized));
+        let token = TokenClient::new(&env, &funding_token);
+        let balance = token.balance(&env.current_contract_address());
+        if balance > 0 {
+            panic_with_error!(&env, CloseError::ActiveBalance);
+        }
+
+        if env
+            .storage()
+            .instance()
+            .get(&DataKey::Dispute)
+            .unwrap_or(false)
+        {
+            panic_with_error!(&env, CloseError::ActiveDispute);
+        }
+
+        let metadata = CloseMetadata {
+            admin: admin.clone(),
+            timestamp: env.ledger().timestamp(),
+            sequence: env.ledger().sequence(),
+        };
+
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, CLOSED_KEY), &true);
+        env.storage()
+            .instance()
+            .set(&Symbol::new(&env, CLOSE_METADATA_KEY), &metadata);
+
+        CloseFinalizedEvt {
+            name: symbol_short!("close"),
+            metadata: metadata.clone(),
+        }
+        .publish(&env);
+    }
+
+    /// Returns the close metadata if the escrow has been closed.
+    pub fn get_closure_metadata(env: Env) -> Option<CloseMetadata> {
+        env.storage()
+            .instance()
+            .get(&Symbol::new(&env, CLOSE_METADATA_KEY))
+    }
+
+    /// Toggles the dispute active flag. Bumps TTL by the disputed threshold.
+    pub fn set_dispute_active(env: Env, active: bool) {
+        let mut escrow: InvoiceEscrow = env
+            .storage()
+            .instance()
+            .get(&DataKey::Escrow)
+            .unwrap_or_else(|| panic_with_error!(&env, CloseError::NotInitialized));
+        escrow.admin.require_auth();
+        escrow.dispute_active = active;
+        env.storage().instance().set(&DataKey::Escrow, &escrow);
+        extend_ttl_for_activity(&env, &escrow, None);
+    }
+}
+
 /// Default maximum maturity horizon in seconds (~5 years) when no explicit horizon is configured.
 pub const DEFAULT_MATURITY_MAX_HORIZON_SECS: u64 = 157_680_000; // ~5 years (365.25 * 24 * 3600 * 5)
 
@@ -371,6 +498,43 @@ pub const INSTANCE_TTL_MIN_EXTENSION_LEDGERS: u32 = 60 * 60; // Approx. 1h at 1 
 /// When [`DataKey::StorageLimit`] is unset, persistent extensions also fall back to
 /// [`INSTANCE_TTL_MIN_EXTENSION_LEDGERS`] (equal to this constant today).
 pub const PERSISTENT_TTL_MIN_EXTENSION_LEDGERS: u32 = 60 * 60; // Approx. 1h at 1 ledger/sec.
+
+pub const TTL_ACTIVE_ESCROW_LEDGERS: u32 = 90 * 24 * 60 * 60;
+pub const TTL_DISPUTED_ESCROW_LEDGERS: u32 = 180 * 24 * 60 * 60;
+pub const TTL_TERMINAL_ESCROW_LEDGERS: u32 = 30 * 24 * 60 * 60;
+
+pub(crate) fn get_lifecycle_ttl(escrow: &InvoiceEscrow) -> u32 {
+    if escrow.dispute_active {
+        TTL_DISPUTED_ESCROW_LEDGERS
+    } else if escrow.status >= 2 {
+        TTL_TERMINAL_ESCROW_LEDGERS
+    } else {
+        TTL_ACTIVE_ESCROW_LEDGERS
+    }
+}
+
+pub(crate) fn extend_ttl_for_activity(
+    env: &Env,
+    escrow: &InvoiceEscrow,
+    investor: Option<Address>,
+) {
+    let ttl = get_lifecycle_ttl(escrow);
+    env.storage().instance().extend_ttl(ttl, ttl);
+    if let Some(addr) = investor {
+        let keys = [
+            DataKey::InvestorContribution(addr.clone()),
+            DataKey::InvestorEffectiveYield(addr.clone()),
+            DataKey::InvestorClaimNotBefore(addr.clone()),
+            DataKey::InvestorClaimed(addr.clone()),
+            DataKey::InvestorAllowlisted(addr),
+        ];
+        for k in keys.iter() {
+            if env.storage().persistent().has(k) {
+                env.storage().persistent().extend_ttl(k, ttl, ttl);
+            }
+        }
+    }
+}
 
 /// Minimum allowed value for [`LiquifactEscrow::set_storage_limit`].
 ///
@@ -3141,7 +3305,11 @@ impl LiquifactEscrow {
     /// | Legal hold active | [`EscrowError::LegalHoldBlocksBeneficiaryRotation`] |
     /// | Escrow not open or funded | [`EscrowError::RotationNotOpen`] |
     /// | `new_sme_address == current SME` | [`EscrowError::NewSmeSameAsCurrent`] |
-    pub fn rotate_beneficiary(env: Env, new_sme_address: Address) -> InvoiceEscrow {
+    pub fn rotate_beneficiary(
+        env: Env,
+        new_sme_address: Address,
+        expected_nonce: u32,
+    ) -> InvoiceEscrow {
         // Legal-hold gate (read-only).
         guard_not_legal_hold(&env, EscrowError::LegalHoldBlocksBeneficiaryRotation);
 
@@ -3260,7 +3428,37 @@ impl LiquifactEscrow {
         escrow
     }
 
-    /// Load the attestation append-log from instance storage.
+    /// Validate and atomically consume the admin nonce for replay protection.
+    ///
+    /// Reads the current expected nonce from [`DataKey::AdminNonce`], checks that it
+    /// matches `expected_nonce`, and increments it by one. Aborts with
+    /// [`EscrowError::AdminNonceMismatch`] on any mismatch (stale, duplicate, or future nonce)
+    /// without disclosing which specific mismatch occurred.
+    ///
+    /// The nonce starts at `0` for new deployments and for legacy deployments that lack the
+    /// [`DataKey::AdminNonce`] key, providing backward compatibility.
+    ///
+    /// # Panics
+    /// Panics with [`EscrowError::AdminNonceMismatch`] if `expected_nonce` does not match the
+    /// stored nonce.
+    fn consume_admin_nonce(env: &Env, expected_nonce: u32) {
+        let current: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::AdminNonce)
+            .unwrap_or(0);
+        ensure(
+            env,
+            current == expected_nonce,
+            EscrowError::AdminNonceMismatch,
+        );
+        let next = current
+            .checked_add(1)
+            .unwrap_or_else(|| fail(env, EscrowError::AdminNonceMismatch));
+        env.storage().instance().set(&DataKey::AdminNonce, &next);
+    }
+
+    /// Guard that the escrow is not under a legal hold.
     ///
     /// Consolidates the repeated pattern of reading `DataKey::AttestationAppendLog` with an
     /// empty-vec fallback used by `append_attestation_digest`, `revoke_attestation_digest`,
@@ -4840,8 +5038,41 @@ impl LiquifactEscrow {
             .unwrap_or(false)
     }
 
-    /// Add or remove an investor from the allowlist.
-    pub fn set_investor_allowlisted(env: Env, investor: Address, allowed: bool) {
+    /// Set whether a specific investor address is allowlisted.
+    ///
+    /// Writes a boolean entry to **persistent** storage under [`DataKey::InvestorAllowlisted`].
+    /// The entry has an independent TTL per address and persists even when the allowlist gate
+    /// is disabled via [`LiquifactEscrow::set_allowlist_active`].
+    ///
+    /// When the allowlist gate is active, [`LiquifactEscrow::fund`] and
+    /// [`LiquifactEscrow::fund_with_commitment`] check this entry and reject funding with
+    /// [`EscrowError::InvestorNotAllowlisted`] if the entry is absent or `false`.
+    ///
+    /// # Authorization
+    /// Requires admin authorization via [`Address::require_auth()`].
+    ///
+    /// # Events
+    /// Emits [`InvestorAllowlistChanged`] for the address.
+    ///
+    /// # Storage
+    /// - Writes to persistent storage: [`DataKey::InvestorAllowlisted(investor)`]
+    /// - Bumps persistent storage TTL via [`Env::storage().persistent().extend_ttl()`]
+    ///   with [`PERSISTENT_TTL_MIN_EXTENSION_LEDGERS`] (≈1 hour at 1 ledger/sec)
+    ///
+    /// # Arguments
+    /// - `investor` — The address to allowlist or remove
+    /// - `allowed` — `true` to allowlist, `false` to remove from allowlist
+    ///
+    /// # See also
+    /// - [`LiquifactEscrow::is_investor_allowlisted`] — check if an address is allowlisted
+    /// - [`LiquifactEscrow::set_investors_allowlisted`] — batch variant for multiple addresses
+    /// - [`docs/escrow-allowlist.md`](../docs/escrow-allowlist.md) — full allowlist model documentation
+    pub fn set_investor_allowlisted(
+        env: Env,
+        investor: Address,
+        allowed: bool,
+        expected_nonce: u32,
+    ) {
         let escrow = Self::load_escrow_require_admin(&env);
 
         let was_allowlisted: bool = env
@@ -4896,9 +5127,19 @@ impl LiquifactEscrow {
     /// `set_investor_allowlisted` individually for each element in `investors`.
     ///
     /// # Errors
-    /// Emits typed [`EscrowError`] codes when the escrow is uninitialized, the batch is empty, or
-    /// the batch exceeds [`MAX_INVESTOR_ALLOWLIST_BATCH`].
-    pub fn set_investors_allowlisted(env: Env, investors: Vec<Address>, allowed: bool) {
+    /// - [`EscrowError::InvestorBatchEmpty`] (70) — when `investors` is empty
+    /// - [`EscrowError::InvestorBatchTooLarge`] (71) — when `investors.len() > MAX_INVESTOR_ALLOWLIST_BATCH`
+    ///
+    /// # See also
+    /// - [`LiquifactEscrow::set_investor_allowlisted`] — single-address variant
+    /// - [`LiquifactEscrow::is_investor_allowlisted`] — check if an address is allowlisted
+    /// - [`docs/escrow-allowlist.md`](../docs/escrow-allowlist.md) — full allowlist model documentation
+    pub fn set_investors_allowlisted(
+        env: Env,
+        investors: Vec<Address>,
+        allowed: bool,
+        expected_nonce: u32,
+    ) {
         let escrow = Self::load_escrow_require_admin(&env);
 
         let n = investors.len();
