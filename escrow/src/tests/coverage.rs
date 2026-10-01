@@ -32,17 +32,124 @@ fn errors_module_reexports_public_error_codes() {
 #[test]
 fn typed_error_codes_cover_init_and_state_guards() {
     let env = Env::default();
+    env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
     let (funding_token, treasury) = free_addresses(&env);
+
+    assert_contract_error(
+        client.try_init(
+            &admin,
+            &soroban_sdk::String::from_str(&env, "INVLD"),
+            &sme,
+            &0i128,
+            &800i64,
+            &0u64,
+            &funding_token,
+            &None,
+            &treasury,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None::<i64>,
+            &None::<u32>,
+        ),
+        EscrowError::AmountMustBePositive,
+    );
+
+    let uninitialized_client = deploy(&env);
+    assert_contract_error(
+        uninitialized_client.try_get_escrow(),
+        EscrowError::EscrowNotInitialized,
+    );
 }
 }
 
 #[test]
 fn typed_error_codes_cover_basic_escrow_guards() {
     let env = Env::default();
+    env.mock_all_auths();
     let (client, admin, sme) = setup(&env);
     let (funding_token, treasury) = free_addresses(&env);
     let _ = (client, admin, sme, funding_token, treasury);
+}
+
+    client.init(
+        &admin,
+        &soroban_sdk::String::from_str(&env, "BASIC1"),
+        &sme,
+        &100i128,
+        &800i64,
+        &0u64,
+        &funding_token,
+        &None,
+        &treasury,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None,
+        &None::<i64>,
+        &None::<u32>,
+    );
+
+    assert_contract_error(
+        client.try_init(
+            &admin,
+            &soroban_sdk::String::from_str(&env, "DUPINIT"),
+            &sme,
+            &50i128,
+            &800i64,
+            &0u64,
+            &funding_token,
+            &None,
+            &treasury,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None::<i64>,
+            &None::<u32>,
+        ),
+        EscrowError::EscrowAlreadyInitialized,
+    );
+
+    let yield_client = deploy(&env);
+    assert_contract_error(
+        yield_client.try_init(
+            &admin,
+            &soroban_sdk::String::from_str(&env, "YLDERR"),
+            &sme,
+            &100i128,
+            &10_001i64,
+            &0u64,
+            &funding_token,
+            &None,
+            &treasury,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+            &None::<i64>,
+            &None::<u32>,
+        ),
+        EscrowError::YieldBpsOutOfRange,
+    );
 }
 
 #[test]

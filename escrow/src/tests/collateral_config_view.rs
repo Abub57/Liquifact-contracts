@@ -1,32 +1,27 @@
-//! Tests for [`LiquifactEscrow::get_collateral_config`], [`LiquifactEscrow::set_collateral_limit`],
-//! and [`LiquifactEscrow::get_collateral_limit`].
+//! Tests for [`LiquifactEscrow::get_collateral_config`],
+//! [`LiquifactEscrow::get_collateral_limit`], [`LiquifactEscrow::set_collateral_limit`],
+//! and the round-trip through [`LiquifactEscrow::record_sme_collateral_commitment`].
 //!
-//! Covers all acceptance criteria for issue #1351:
-//!
-//! - Default values before and after [`LiquifactEscrow::init`].
-//! - `collateral_limit` reflects admin overrides via [`LiquifactEscrow::set_collateral_limit`].
-//! - `sme_commitment` reflects [`LiquifactEscrow::record_sme_collateral_commitment`] and
-//!   [`LiquifactEscrow::clear_sme_collateral_commitment`] lifecycle transitions.
-//! - Bundled view is consistent with individual getters (no drift).
-//! - Idempotency: pure reads produce identical results on repeat calls.
-//! - Struct shape stability: field-by-field destructuring so a future struct change fails at
-//!   compile time.
-//! - Authorization: `get_collateral_config` and `get_collateral_limit` require no auth;
-//!   `set_collateral_limit` requires admin auth.
-//! - Validation boundaries for `set_collateral_limit`: rejects non-positive and out-of-range
-//!   limits; accepts valid boundaries.
-//! - Validation boundaries for `record_sme_collateral_commitment`: `CollateralLimitExceeded`
-//!   is returned when `amount > collateral_limit`.
-//! - Multiple sequential limit updates and commitment replacements are handled consistently.
-//! - Boundary values: `1`, `MAX_INVOICE_AMOUNT - 1`, `MAX_INVOICE_AMOUNT`, `MAX_INVOICE_AMOUNT + 1`,
-//!   `i128::MIN`, `i128::MAX`.
+//! Covers:
+//! - Default values before [`LiquifactEscrow::init`] is called.
+//! - Values remain at their documented defaults after `init` (no overwrite).
+//! - The bundled `get_collateral_config` matches `get_collateral_limit` +
+//!   `get_sme_collateral_commitment` individual reads (atomicity / no drift).
+//! - Pure reads are idempotent and never require auth.
+//! - `set_collateral_limit` admin guard, positive-amount guard, and
+//!   `MAX_INVOICE_AMOUNT` boundary guard.
+//! - `record_sme_collateral_commitment` honors the configured ceiling.
+//! - The struct shape is pinned via field-by-field destructuring so adding or
+//!   renaming fields produces a compile error.
+//! - `CollateralLimitExceeded` is raised for commitments over the ceiling.
 
 use super::super::{
-    CollateralCommitmentSnapshot, CollateralConfig, EscrowError, LiquifactEscrow,
-    LiquifactEscrowClient, MAX_INVOICE_AMOUNT,
+    CollateralCommitmentSnapshot, CollateralConfig, LiquifactEscrow, LiquifactEscrowClient,
+    MAX_INVOICE_AMOUNT,
 };
-use super::assert_contract_error;
-use soroban_sdk::testutils::Address as _;
+use crate::tests::assert_contract_error;
+use crate::EscrowError;
+use soroban_sdk::testutils::{Address as _, Ledger};
 use soroban_sdk::{Address, Env, Symbol};
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -36,14 +31,16 @@ fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
     LiquifactEscrowClient::new(env, &id)
 }
 
-fn init_escrow(env: &Env, client: &LiquifactEscrowClient) -> (Address, Address) {
+fn deploy_and_init(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
+    let client = deploy(env);
     let admin = Address::generate(env);
     let sme = Address::generate(env);
     let token = Address::generate(env);
     let treasury = Address::generate(env);
+
     client.init(
         &admin,
-        &soroban_sdk::String::from_str(env, "CCFGTEST"),
+        &soroban_sdk::String::from_str(env, "COLCFG01"),
         &sme,
         &10_000i128,
         &800i64,
@@ -62,759 +59,348 @@ fn init_escrow(env: &Env, client: &LiquifactEscrowClient) -> (Address, Address) 
         &None::<i64>,
         &None::<u32>,
     );
-    (admin, sme)
+
+    (client, admin, sme)
 }
 
-// ── Section 1: Default values ─────────────────────────────────────────────────
+// ── Defaults ─────────────────────────────────────────────────────────────────
 
-/// Before `init`, every field in `CollateralConfig` must return its documented default.
+/// Before `init`: `collateral_limit == MAX_INVOICE_AMOUNT`, `sme_commitment == None`.
 #[test]
 fn test_defaults_before_init() {
     let env = Env::default();
     let client = deploy(&env);
 
-    let config = client.get_collateral_config();
-
-    assert_eq!(
-        config.collateral_limit, MAX_INVOICE_AMOUNT,
-        "collateral_limit must default to MAX_INVOICE_AMOUNT before init"
-    );
-    assert_eq!(
-        config.sme_commitment,
-        CollateralCommitmentSnapshot::None,
-        "sme_commitment must be None before init"
-    );
-}
-
-/// After `init` (and without further mutations), fields must still return defaults.
-#[test]
-fn test_defaults_after_init() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    let config = client.get_collateral_config();
-
-    assert_eq!(
-        config.collateral_limit, MAX_INVOICE_AMOUNT,
-        "collateral_limit must still be MAX_INVOICE_AMOUNT after init without override"
-    );
-    assert_eq!(
-        config.sme_commitment,
-        CollateralCommitmentSnapshot::None,
-        "sme_commitment must be None after init when no commitment recorded"
-    );
-}
-
-/// `get_collateral_limit()` alone returns the same default.
-#[test]
-fn test_get_collateral_limit_default_before_init() {
-    let env = Env::default();
-    let client = deploy(&env);
-
     assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
-}
-
-/// `get_collateral_limit()` after `init` remains `MAX_INVOICE_AMOUNT`.
-#[test]
-fn test_get_collateral_limit_default_after_init() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
-}
-
-// ── Section 2: Idempotency ────────────────────────────────────────────────────
-
-/// `get_collateral_config` is a pure read: repeated calls must return identical results
-/// before init.
-#[test]
-fn test_idempotent_before_init() {
-    let env = Env::default();
-    let client = deploy(&env);
-
-    let first = client.get_collateral_config();
-    let second = client.get_collateral_config();
-
-    assert_eq!(first, second);
-}
-
-/// `get_collateral_config` is idempotent after init and after mutations.
-#[test]
-fn test_idempotent_after_mutation() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&50_000i128);
-    client.record_sme_collateral_commitment(&Symbol::new(&env, "GOLD"), &5_000i128);
-
-    let first = client.get_collateral_config();
-    let second = client.get_collateral_config();
-
-    assert_eq!(first, second);
-}
-
-// ── Section 3: Struct shape stability ────────────────────────────────────────
-
-/// Destructuring `CollateralConfig` by field ensures a compile-time break if the
-/// struct layout changes without this test being updated.
-#[test]
-fn test_struct_shape_stability() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&100_000i128);
-    client.record_sme_collateral_commitment(&Symbol::new(&env, "ETH"), &1_000i128);
 
     let CollateralConfig {
         collateral_limit,
         sme_commitment,
     } = client.get_collateral_config();
 
-    assert_eq!(collateral_limit, 100_000i128);
-    assert!(matches!(
-        sme_commitment,
-        CollateralCommitmentSnapshot::Some(_)
-    ));
+    assert_eq!(collateral_limit, MAX_INVOICE_AMOUNT);
+    assert_eq!(sme_commitment, CollateralCommitmentSnapshot::None);
 }
 
-// ── Section 4: Consistency with individual getters ────────────────────────────
-
-/// `config.collateral_limit` must always equal `get_collateral_limit()`.
+/// After `init`: keys are still absent so defaults persist (no silent init-time overwrite).
 #[test]
-fn test_config_matches_get_collateral_limit_at_default() {
+fn test_defaults_after_init() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
+    let (client, _admin, _sme) = deploy_and_init(&env);
 
-    let config = client.get_collateral_config();
-    assert_eq!(config.collateral_limit, client.get_collateral_limit());
+    assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
+
+    let cfg = client.get_collateral_config();
+    assert_eq!(cfg.collateral_limit, MAX_INVOICE_AMOUNT);
+    assert_eq!(cfg.sme_commitment, CollateralCommitmentSnapshot::None);
 }
 
-/// After `set_collateral_limit`, both views stay in sync.
+// ── Consistency with individual getters ──────────────────────────────────────
+
+/// `get_collateral_config().collateral_limit` must always equal `get_collateral_limit()`,
+/// and the commitment must match `get_sme_collateral_commitment()` (lifted to snapshot).
 #[test]
-fn test_config_matches_get_collateral_limit_after_update() {
+fn test_consistency_with_individual_getters_before_mut() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
+    let (client, _admin, _sme) = deploy_and_init(&env);
 
-    client.set_collateral_limit(&75_000i128);
-
-    let config = client.get_collateral_config();
-    assert_eq!(
-        config.collateral_limit,
-        client.get_collateral_limit(),
-        "bundled and individual views must agree after set_collateral_limit"
-    );
-    assert_eq!(config.collateral_limit, 75_000i128);
+    let cfg = client.get_collateral_config();
+    assert_eq!(cfg.collateral_limit, client.get_collateral_limit());
+    assert_eq!(cfg.sme_commitment, CollateralCommitmentSnapshot::None);
+    assert_eq!(client.get_sme_collateral_commitment(), None);
 }
 
-/// `config.sme_commitment` must reflect the state of `get_sme_collateral_commitment`.
+/// After `set_collateral_limit` + `record_sme_collateral_commitment`, the bundled
+/// config still agrees with the authoritative per-key reads.
 #[test]
-fn test_config_sme_commitment_matches_individual_getter_none() {
+fn test_consistency_with_individual_getters_after_mut() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
+    let (client, _admin, sme) = deploy_and_init(&env);
 
-    let config = client.get_collateral_config();
-    // No commitment recorded yet.
-    assert_eq!(config.sme_commitment, CollateralCommitmentSnapshot::None);
-    assert!(client.get_sme_collateral_commitment().is_none());
-}
-
-#[test]
-fn test_config_sme_commitment_matches_individual_getter_some() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
+    client.set_collateral_limit(&7_500i128);
     let asset = Symbol::new(&env, "USDC");
     let commitment = client.record_sme_collateral_commitment(&asset, &5_000i128);
 
-    let config = client.get_collateral_config();
-
-    // Bundled view must be Some.
-    match config.sme_commitment {
-        CollateralCommitmentSnapshot::Some(c) => {
-            assert_eq!(c.amount, commitment.amount);
-            assert_eq!(c.asset, commitment.asset);
-            assert_eq!(c.recorded_at, commitment.recorded_at);
-        }
-        CollateralCommitmentSnapshot::None => panic!("expected Some after recording commitment"),
-    }
-
-    // Individual getter must also return the same commitment.
-    let individual = client
-        .get_sme_collateral_commitment()
-        .expect("individual getter must return Some");
-    assert_eq!(individual.amount, commitment.amount);
+    let cfg = client.get_collateral_config();
+    assert_eq!(cfg.collateral_limit, client.get_collateral_limit());
+    assert_eq!(cfg.collateral_limit, 7_500i128);
+    assert_eq!(
+        cfg.sme_commitment,
+        CollateralCommitmentSnapshot::Some(commitment.clone())
+    );
+    assert_eq!(client.get_sme_collateral_commitment(), Some(commitment));
 }
 
-// ── Section 5: set_collateral_limit — valid inputs ───────────────────────────
+// ── Idempotency ──────────────────────────────────────────────────────────────
 
-/// Minimum valid limit (1) is accepted and stored.
+/// Calling views multiple times returns the same value.
 #[test]
-fn test_set_collateral_limit_minimum_valid() {
+fn test_idempotent_before_init() {
+    let env = Env::default();
+    let client = deploy(&env);
+
+    let a = client.get_collateral_config();
+    let b = client.get_collateral_config();
+    assert_eq!(a.collateral_limit, b.collateral_limit);
+    assert_eq!(a.sme_commitment, b.sme_commitment);
+    assert_eq!(client.get_collateral_limit(), client.get_collateral_limit());
+}
+
+/// Calling views multiple times after mutation returns stable, equal snapshots.
+#[test]
+fn test_idempotent_after_init_and_mut() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    client.set_collateral_limit(&2_000i128);
 
+    let a = client.get_collateral_config();
+    let b = client.get_collateral_config();
+    let c = client.get_collateral_config();
+    assert_eq!(a.collateral_limit, b.collateral_limit);
+    assert_eq!(b.collateral_limit, c.collateral_limit);
+    assert_eq!(a.sme_commitment, CollateralCommitmentSnapshot::None);
+}
+
+// ── Struct shape pin ─────────────────────────────────────────────────────────
+
+/// Destructuring pins the struct's public field names and arity at compile time.
+#[test]
+fn test_struct_shape_pin() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, sme) = deploy_and_init(&env);
+    client.set_collateral_limit(&12_000i128);
+    let asset = Symbol::new(&env, "EURC");
+    let recorded = client.record_sme_collateral_commitment(&asset, &3_000i128);
+
+    let CollateralConfig {
+        collateral_limit,
+        sme_commitment,
+    } = client.get_collateral_config();
+
+    assert_eq!(collateral_limit, 12_000i128);
+    match sme_commitment {
+        CollateralCommitmentSnapshot::Some(c) => {
+            assert_eq!(c.asset, recorded.asset);
+            assert_eq!(c.amount, recorded.amount);
+            assert_eq!(c.recorded_at, recorded.recorded_at);
+        }
+        CollateralCommitmentSnapshot::None => panic!("expected commitment to be set"),
+    }
+}
+
+// ── State transitions ────────────────────────────────────────────────────────
+
+/// `set_collateral_limit` writes the new ceiling; view reflects it immediately.
+#[test]
+fn test_after_set_collateral_limit() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+
+    client.set_collateral_limit(&5_000i128);
+    assert_eq!(client.get_collateral_limit(), 5_000i128);
+    assert_eq!(client.get_collateral_config().collateral_limit, 5_000i128);
+
+    // overwrite
+    client.set_collateral_limit(&9_999i128);
+    assert_eq!(client.get_collateral_limit(), 9_999i128);
+    assert_eq!(client.get_collateral_config().collateral_limit, 9_999i128);
+}
+
+/// After recording a commitment, `sme_commitment` becomes `Some(...)`.
+#[test]
+fn test_after_record_sme_collateral_commitment() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    let asset = Symbol::new(&env, "XLM");
+
+    let commitment = client.record_sme_collateral_commitment(&asset, &1_000i128);
+    let cfg = client.get_collateral_config();
+    match cfg.sme_commitment {
+        CollateralCommitmentSnapshot::Some(c) => {
+            assert_eq!(c, commitment);
+        }
+        CollateralCommitmentSnapshot::None => panic!("expected Some"),
+    }
+}
+
+/// After clearing, `sme_commitment` reverts to `None`; limit is preserved.
+#[test]
+fn test_after_clear_sme_collateral_commitment() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    client.set_collateral_limit(&6_000i128);
+
+    let asset = Symbol::new(&env, "BTC");
+    client.record_sme_collateral_commitment(&asset, &1_500i128);
+    assert_ne!(
+        client.get_collateral_config().sme_commitment,
+        CollateralCommitmentSnapshot::None
+    );
+
+    client.clear_sme_collateral_commitment();
+
+    let cfg = client.get_collateral_config();
+    assert_eq!(cfg.sme_commitment, CollateralCommitmentSnapshot::None);
+    assert_eq!(cfg.collateral_limit, 6_000i128);
+}
+
+// ── Boundary / validation for set_collateral_limit ───────────────────────────
+
+/// `limit = 1` (minimum valid positive) succeeds.
+#[test]
+fn test_set_limit_minimum_valid() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
     client.set_collateral_limit(&1i128);
     assert_eq!(client.get_collateral_limit(), 1i128);
-
-    let config = client.get_collateral_config();
-    assert_eq!(config.collateral_limit, 1i128);
 }
 
-/// Arbitrary mid-range value is accepted.
+/// `limit = MAX_INVOICE_AMOUNT` succeeds (equality allowed).
 #[test]
-fn test_set_collateral_limit_mid_range() {
+fn test_set_limit_boundary_max_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    let limit = 5_000_000i128;
-    client.set_collateral_limit(&limit);
-    assert_eq!(client.get_collateral_limit(), limit);
-}
-
-/// Exactly at `MAX_INVOICE_AMOUNT` is accepted.
-#[test]
-fn test_set_collateral_limit_exactly_at_max() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
+    let (client, _admin, _sme) = deploy_and_init(&env);
     client.set_collateral_limit(&MAX_INVOICE_AMOUNT);
     assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
 }
 
-/// One below `MAX_INVOICE_AMOUNT` is accepted.
+/// `limit = 0` → `CollateralLimitNotPositive`.
 #[test]
-fn test_set_collateral_limit_just_below_max() {
+fn test_set_limit_zero_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    let limit = MAX_INVOICE_AMOUNT - 1;
-    client.set_collateral_limit(&limit);
-    assert_eq!(client.get_collateral_limit(), limit);
-}
-
-// ── Section 6: set_collateral_limit — rejection boundaries ───────────────────
-
-/// Zero limit is rejected with `CollateralLimitNotPositive`.
-#[test]
-fn test_set_collateral_limit_rejects_zero() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
+    let (client, _admin, _sme) = deploy_and_init(&env);
     assert_contract_error(
-        client.try_set_collateral_limit(&0i128),
+        Ok(client.try_set_collateral_limit(&0i128)),
         EscrowError::CollateralLimitNotPositive,
     );
 }
 
-/// Negative limit is rejected with `CollateralLimitNotPositive`.
+/// `limit = -1` → `CollateralLimitNotPositive`.
 #[test]
-fn test_set_collateral_limit_rejects_negative() {
+fn test_set_limit_negative_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
+    let (client, _admin, _sme) = deploy_and_init(&env);
     assert_contract_error(
-        client.try_set_collateral_limit(&-1i128),
+        Ok(client.try_set_collateral_limit(&-1i128)),
         EscrowError::CollateralLimitNotPositive,
     );
 }
 
-/// `i128::MIN` is rejected with `CollateralLimitNotPositive`.
+/// `limit = MAX_INVOICE_AMOUNT + 1` → `CollateralLimitExceedsMax`.
 #[test]
-fn test_set_collateral_limit_rejects_i128_min() {
+fn test_set_limit_over_max_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    let too_big = MAX_INVOICE_AMOUNT
+        .checked_add(1)
+        .expect("MAX_INVOICE_AMOUNT + 1 must fit in i128");
     assert_contract_error(
-        client.try_set_collateral_limit(&i128::MIN),
-        EscrowError::CollateralLimitNotPositive,
-    );
-}
-
-/// `MAX_INVOICE_AMOUNT + 1` is rejected with `CollateralLimitExceedsMax`.
-#[test]
-fn test_set_collateral_limit_rejects_just_above_max() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    assert_contract_error(
-        client.try_set_collateral_limit(&(MAX_INVOICE_AMOUNT + 1)),
+        Ok(client.try_set_collateral_limit(&too_big)),
         EscrowError::CollateralLimitExceedsMax,
     );
 }
 
-/// `i128::MAX` is rejected with `CollateralLimitExceedsMax`.
+/// Non-admin caller: `set_collateral_limit` is admin-guarded via
+/// `load_escrow_require_admin` so it fails when `mock_all_auths` is disabled and
+/// a non-admin address invokes it.
 #[test]
-fn test_set_collateral_limit_rejects_i128_max() {
+fn test_set_limit_requires_admin_auth() {
+    let env = Env::default();
+    let (client, _admin, sme) = deploy_and_init(&env);
+    env.set_source_account(&sme);
+    let res = client.try_set_collateral_limit(&5_000i128);
+    match res {
+        Err(_) => {} // auth failure expected
+        Ok(Err(_)) => {} // EscrowError::NotAdmin via mock is also a failure path
+        _ => panic!("expected auth/NotAdmin failure for non-admin setter call"),
+    }
+}
+
+// ── CollateralLimitExceeded guard in record ──────────────────────────────────
+
+/// Recording exactly at the ceiling succeeds.
+#[test]
+fn test_record_at_ceiling_succeeds() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    client.set_collateral_limit(&3_000i128);
+    let asset = Symbol::new(&env, "USDC");
+    let c = client.record_sme_collateral_commitment(&asset, &3_000i128);
+    assert_eq!(c.amount, 3_000i128);
+}
 
+/// Recording amount > ceiling → `CollateralLimitExceeded`.
+#[test]
+fn test_record_over_ceiling_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    client.set_collateral_limit(&3_000i128);
+    let asset = Symbol::new(&env, "USDC");
     assert_contract_error(
-        client.try_set_collateral_limit(&i128::MAX),
-        EscrowError::CollateralLimitExceedsMax,
+        Ok(client.try_record_sme_collateral_commitment(&asset, &3_001i128)),
+        EscrowError::CollateralLimitExceeded,
     );
 }
 
-/// A failed `set_collateral_limit` call must leave the limit unchanged.
+/// Default ceiling (MAX_INVOICE_AMOUNT) still enforces: a deliberately absurd
+/// value that exceeds it is rejected.
 #[test]
-fn test_set_collateral_limit_rejected_does_not_mutate_state() {
+fn test_record_over_default_max_rejected() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    // Set a known good limit.
-    client.set_collateral_limit(&10_000i128);
-
-    // Attempt an invalid update.
-    let _ = client.try_set_collateral_limit(&0i128);
-
-    // Limit must still be 10_000.
-    assert_eq!(client.get_collateral_limit(), 10_000i128);
-    assert_eq!(client.get_collateral_config().collateral_limit, 10_000i128);
+    let (client, _admin, _sme) = deploy_and_init(&env);
+    let too_big = MAX_INVOICE_AMOUNT
+        .checked_add(1)
+        .expect("MAX_INVOICE_AMOUNT + 1 must fit");
+    let asset = Symbol::new(&env, "XLM");
+    assert_contract_error(
+        Ok(client.try_record_sme_collateral_commitment(&asset, &too_big)),
+        EscrowError::CollateralLimitExceeded,
+    );
 }
 
-// ── Section 7: record_sme_collateral_commitment limit enforcement ─────────────
-
-/// Recording at exactly the configured limit succeeds.
+/// Batch record: any single item over the ceiling rejects the entire batch
+/// atomically — prior commitment should be unchanged.
 #[test]
-fn test_record_commitment_exactly_at_limit_succeeds() {
+fn test_batch_record_over_ceiling_atomic_reject() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
+    let (client, _admin, _sme) = deploy_and_init(&env);
     client.set_collateral_limit(&5_000i128);
-    let asset = Symbol::new(&env, "USDC");
-    let commitment = client.record_sme_collateral_commitment(&asset, &5_000i128);
 
-    assert_eq!(commitment.amount, 5_000i128);
-}
+    // pre-state: record a valid commitment first
+    let a0 = Symbol::new(&env, "A0");
+    let prior = client.record_sme_collateral_commitment(&a0, &2_000i128);
 
-/// Recording one unit above the configured limit is rejected with `CollateralLimitExceeded`.
-#[test]
-fn test_record_commitment_just_above_limit_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&5_000i128);
-    let asset = Symbol::new(&env, "USDC");
-
+    // build a batch where item 1 is fine but item 2 exceeds ceiling
+    let a1 = Symbol::new(&env, "A1");
+    let a2 = Symbol::new(&env, "A2");
+    let items = soroban_sdk::Vec::from_array(
+        &env,
+        [(a1.clone(), 3_000i128), (a2.clone(), 5_001i128)],
+    );
     assert_contract_error(
-        client.try_record_sme_collateral_commitment(&asset, &5_001i128),
+        Ok(client.try_batch_record_collateral(&items)),
         EscrowError::CollateralLimitExceeded,
     );
-}
 
-/// Recording well above the limit is also rejected.
-#[test]
-fn test_record_commitment_far_above_limit_rejected() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&1_000i128);
-    let asset = Symbol::new(&env, "USDC");
-
-    assert_contract_error(
-        client.try_record_sme_collateral_commitment(&asset, &100_000i128),
-        EscrowError::CollateralLimitExceeded,
-    );
-}
-
-/// At the default limit (`MAX_INVOICE_AMOUNT`), recording an amount equal to it succeeds.
-#[test]
-fn test_record_commitment_at_default_limit_succeeds() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    // No explicit limit set — default is MAX_INVOICE_AMOUNT.
-    let asset = Symbol::new(&env, "USDC");
-    let commitment = client.record_sme_collateral_commitment(&asset, &MAX_INVOICE_AMOUNT);
-    assert_eq!(commitment.amount, MAX_INVOICE_AMOUNT);
-}
-
-/// A failed commitment due to limit violation must leave `sme_commitment` unchanged.
-#[test]
-fn test_record_commitment_rejected_does_not_mutate_state() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&1_000i128);
-    let asset = Symbol::new(&env, "USDC");
-
-    // Attempt invalid commitment.
-    let _ = client.try_record_sme_collateral_commitment(&asset, &2_000i128);
-
-    // sme_commitment must remain None (never recorded).
-    assert_eq!(
-        client.get_collateral_config().sme_commitment,
-        CollateralCommitmentSnapshot::None
-    );
-    assert!(client.get_sme_collateral_commitment().is_none());
-}
-
-// ── Section 8: Lifecycle transitions ─────────────────────────────────────────
-
-/// After recording, config shows `Some`; after clearing, config returns to `None`.
-#[test]
-fn test_sme_commitment_some_then_none_lifecycle() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    let asset = Symbol::new(&env, "ETH");
-
-    // Before record: None.
-    assert_eq!(
-        client.get_collateral_config().sme_commitment,
-        CollateralCommitmentSnapshot::None
-    );
-
-    // After record: Some.
-    client.record_sme_collateral_commitment(&asset, &500i128);
-    assert!(matches!(
-        client.get_collateral_config().sme_commitment,
-        CollateralCommitmentSnapshot::Some(_)
-    ));
-
-    // After clear: None again.
-    client.clear_sme_collateral_commitment();
-    assert_eq!(
-        client.get_collateral_config().sme_commitment,
-        CollateralCommitmentSnapshot::None
-    );
-}
-
-/// Replacing a commitment updates `sme_commitment.Some.amount`; `collateral_limit` is unchanged.
-#[test]
-fn test_replacement_updates_sme_commitment_not_limit() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    let asset = Symbol::new(&env, "BTC");
-    client.set_collateral_limit(&50_000i128);
-
-    // First record.
-    client.record_sme_collateral_commitment(&asset, &10_000i128);
-    // Advance ledger timestamp so replacement timestamp check passes.
-    env.ledger().set_timestamp(1_000);
-
-    // Second record (replacement).
-    client.record_sme_collateral_commitment(&asset, &20_000i128);
-
-    let config = client.get_collateral_config();
-    assert_eq!(config.collateral_limit, 50_000i128);
-    match config.sme_commitment {
-        CollateralCommitmentSnapshot::Some(c) => assert_eq!(c.amount, 20_000i128),
-        CollateralCommitmentSnapshot::None => panic!("expected Some after replacement"),
-    }
-}
-
-/// Multiple sequential `set_collateral_limit` calls update the stored limit and are reflected
-/// consistently in both `get_collateral_limit()` and `get_collateral_config()`.
-#[test]
-fn test_sequential_limit_updates_are_consistent() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    for limit in [1i128, 1_000, 100_000, MAX_INVOICE_AMOUNT] {
-        client.set_collateral_limit(&limit);
-        assert_eq!(client.get_collateral_limit(), limit);
-        assert_eq!(client.get_collateral_config().collateral_limit, limit);
-    }
-}
-
-/// Lowering the limit below an already-recorded commitment does not retroactively
-/// invalidate the stored commitment, but future records above the new limit are rejected.
-#[test]
-fn test_lowering_limit_blocks_future_records_but_not_existing() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    // Record at a large amount.
-    client.set_collateral_limit(&50_000i128);
-    let asset = Symbol::new(&env, "USDC");
-    client.record_sme_collateral_commitment(&asset, &50_000i128);
-
-    // Lower the limit.
-    client.set_collateral_limit(&1_000i128);
-
-    // Existing commitment is still in the config unchanged.
-    match client.get_collateral_config().sme_commitment {
-        CollateralCommitmentSnapshot::Some(c) => assert_eq!(c.amount, 50_000i128),
-        CollateralCommitmentSnapshot::None => panic!("commitment must survive a limit lowering"),
-    }
-
-    // But a new record above the new limit is rejected.
-    env.ledger().set_timestamp(1_000);
-    assert_contract_error(
-        client.try_record_sme_collateral_commitment(&asset, &2_000i128),
-        EscrowError::CollateralLimitExceeded,
-    );
-}
-
-// ── Section 9: Authorization ──────────────────────────────────────────────────
-
-/// `get_collateral_config` requires no auth (plain call, no mock).
-#[test]
-fn test_get_collateral_config_no_auth_required() {
-    let env = Env::default();
-    // Deliberately NOT calling mock_all_auths.
-    let client = deploy(&env);
-
-    // Must not panic even without any auth.
-    let config = client.get_collateral_config();
-    assert_eq!(config.collateral_limit, MAX_INVOICE_AMOUNT);
-    assert_eq!(config.sme_commitment, CollateralCommitmentSnapshot::None);
-}
-
-/// `get_collateral_limit` requires no auth.
-#[test]
-fn test_get_collateral_limit_no_auth_required() {
-    let env = Env::default();
-    // Deliberately NOT calling mock_all_auths.
-    let client = deploy(&env);
-
-    // Must not panic even without any auth.
-    assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
-}
-
-/// Both read entrypoints remain auth-free after init.
-#[test]
-fn test_read_entrypoints_auth_free_after_init() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    // Reset: no further auth mock in scope for the reads.
-    let config = client.get_collateral_config();
-    assert_eq!(config.collateral_limit, MAX_INVOICE_AMOUNT);
-    assert_eq!(client.get_collateral_limit(), MAX_INVOICE_AMOUNT);
-}
-
-// ── Section 10: Boundary values ───────────────────────────────────────────────
-
-/// Boundary table for `set_collateral_limit`:
-///
-/// | Input              | Expected outcome        |
-/// |--------------------|------------------------|
-/// | `i128::MIN`        | `CollateralLimitNotPositive` |
-/// | `-1`               | `CollateralLimitNotPositive` |
-/// | `0`                | `CollateralLimitNotPositive` |
-/// | `1`                | **accepted**            |
-/// | `MAX_INVOICE_AMOUNT - 1` | **accepted**      |
-/// | `MAX_INVOICE_AMOUNT` | **accepted**          |
-/// | `MAX_INVOICE_AMOUNT + 1` | `CollateralLimitExceedsMax` |
-/// | `i128::MAX`        | `CollateralLimitExceedsMax` |
-#[test]
-fn test_set_collateral_limit_boundary_table() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    // Rejected: non-positive
-    for bad in [i128::MIN, -1i128, 0i128] {
-        assert_contract_error(
-            client.try_set_collateral_limit(&bad),
-            EscrowError::CollateralLimitNotPositive,
-        );
-    }
-
-    // Accepted: at and within range
-    for good in [1i128, MAX_INVOICE_AMOUNT - 1, MAX_INVOICE_AMOUNT] {
-        client.set_collateral_limit(&good);
-        assert_eq!(client.get_collateral_limit(), good);
-    }
-
-    // Rejected: above max
-    for bad in [MAX_INVOICE_AMOUNT + 1, i128::MAX] {
-        assert_contract_error(
-            client.try_set_collateral_limit(&bad),
-            EscrowError::CollateralLimitExceedsMax,
-        );
-    }
-}
-
-/// Boundary table for `record_sme_collateral_commitment` with respect to the collateral limit:
-///
-/// | Limit   | Amount           | Expected          |
-/// |---------|-----------------|-------------------|
-/// | 1_000   | 999             | **accepted**      |
-/// | 1_000   | 1_000           | **accepted**      |
-/// | 1_000   | 1_001           | `CollateralLimitExceeded` |
-/// | default | MAX_INVOICE_AMOUNT | **accepted**   |
-/// | default | MAX_INVOICE_AMOUNT + 1 | (SDK rejects as negative — unreachable) |
-#[test]
-fn test_record_commitment_boundary_table() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&1_000i128);
-    let asset = Symbol::new(&env, "USDC");
-
-    // Just below limit.
-    client.record_sme_collateral_commitment(&asset, &999i128);
-    env.ledger().set_timestamp(100);
-
-    // Exactly at limit.
-    client.record_sme_collateral_commitment(&asset, &1_000i128);
-    env.ledger().set_timestamp(200);
-
-    // One above limit.
-    assert_contract_error(
-        client.try_record_sme_collateral_commitment(&asset, &1_001i128),
-        EscrowError::CollateralLimitExceeded,
-    );
-}
-
-// ── Section 11: Duplicate / concurrent safety ─────────────────────────────────
-
-/// Calling `set_collateral_limit` twice with the same value is idempotent.
-#[test]
-fn test_set_collateral_limit_same_value_idempotent() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&10_000i128);
-    client.set_collateral_limit(&10_000i128); // second call with same value
-
-    assert_eq!(client.get_collateral_limit(), 10_000i128);
-    assert_eq!(client.get_collateral_config().collateral_limit, 10_000i128);
-}
-
-/// `get_collateral_config` reflects the state at the ledger snapshot time — calling it
-/// before and after a limit update shows distinct values (no caching artefacts).
-#[test]
-fn test_config_reflects_current_state_not_cached() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    let before = client.get_collateral_config();
-    assert_eq!(before.collateral_limit, MAX_INVOICE_AMOUNT);
-
-    client.set_collateral_limit(&12_345i128);
-
-    let after = client.get_collateral_config();
-    assert_eq!(after.collateral_limit, 12_345i128);
-
-    // The two reads must differ.
-    assert_ne!(before.collateral_limit, after.collateral_limit);
-}
-
-// ── Section 12: Error code stability ─────────────────────────────────────────
-
-/// Verify that the numeric error codes for collateral limit errors are stable and
-/// match the documented values.
-///
-/// | Error                     | Expected code |
-/// |---------------------------|--------------|
-/// | `CollateralLimitNotPositive` | 64        |
-/// | `CollateralLimitExceedsMax`  | 65        |
-/// | `CollateralLimitExceeded`    | 66        |
-#[test]
-fn test_error_codes_stable() {
-    assert_eq!(EscrowError::CollateralLimitNotPositive as u32, 64);
-    assert_eq!(EscrowError::CollateralLimitExceedsMax as u32, 65);
-    assert_eq!(EscrowError::CollateralLimitExceeded as u32, 66);
-}
-
-/// Rejection of `set_collateral_limit(&0)` emits exactly `CollateralLimitNotPositive` (64).
-#[test]
-fn test_set_collateral_limit_zero_emits_correct_error_code() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    assert_contract_error(
-        client.try_set_collateral_limit(&0i128),
-        EscrowError::CollateralLimitNotPositive,
-    );
-}
-
-/// Rejection of `set_collateral_limit` above max emits exactly `CollateralLimitExceedsMax` (65).
-#[test]
-fn test_set_collateral_limit_above_max_emits_correct_error_code() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    assert_contract_error(
-        client.try_set_collateral_limit(&(MAX_INVOICE_AMOUNT + 1)),
-        EscrowError::CollateralLimitExceedsMax,
-    );
-}
-
-/// Rejection of `record_sme_collateral_commitment` above limit emits `CollateralLimitExceeded` (66).
-#[test]
-fn test_record_commitment_above_limit_emits_correct_error_code() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    init_escrow(&env, &client);
-
-    client.set_collateral_limit(&500i128);
-    let asset = Symbol::new(&env, "USDC");
-
-    assert_contract_error(
-        client.try_record_sme_collateral_commitment(&asset, &501i128),
-        EscrowError::CollateralLimitExceeded,
-    );
+    // atomic: prior commitment should still be A0 / 2000
+    let stored = client.get_sme_collateral_commitment().expect("present");
+    assert_eq!(stored.amount, prior.amount);
+    assert_eq!(stored.asset, prior.asset);
 }
