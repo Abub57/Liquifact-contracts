@@ -1,19 +1,29 @@
 use soroban_sdk::contracterror;
+
+/// Canonical error codes for the Liquifact escrow contract.
+///
+//# Invariants
+/// - Error codes are stable and must not be renumbered once shipped;
+///   clients and off-chain monitoring rely on the numeric value.
+/// - Each error is deterministic for a given invalid input or state.
+/// - Errors expose no sensitive data (addresses, amounts, reasons);
+///   only the failure class.
+/// - Ranges are reserved so new errors can be added without collisions.
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 #[repr(u32)]
 pub enum EscrowError {
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Initialization & State Errors (1..19)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     AlreadyInitialized = 1,
     NotInitialized = 2,
     InvalidStatus = 3,
     EscrowExpired = 4,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Authorization & Admin Errors (20..35)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     Unauthorized = 20,
     AdminAlreadySet = 21,
     PendingAdminNotFound = 22,
@@ -22,7 +32,7 @@ pub enum EscrowError {
 
     // -------------------------------------------------------------------------------
     // Token / SEP-41 Safety Wrapper Errors (36..45)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     FundingTokenTransferFailed = 36,
     BalanceMismatchAfterTransfer = 37,
     NonPositiveTransferAmount = 38,
@@ -30,9 +40,9 @@ pub enum EscrowError {
     TokenBalanceOverflow = 40,
     TokenWrapperInvariantViolation = 41,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Funding & Contribution Errors (50..69)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     FundingTargetExceeded = 50,
     ZeroContributionAmount = 51,
     InvestorCapReached = 52,
@@ -48,7 +58,7 @@ pub enum EscrowError {
 
     // -------------------------------------------------------------------------------
     // Batch Operations Errors (80..89)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     FundingBatchEmpty = 80,
     FundingBatchExceedsLimit = 81,
     FundingBatchInvalidAmount = 82,
@@ -57,14 +67,14 @@ pub enum EscrowError {
     ClaimBatchEmpty = 85,
     ClaimBatchExceedsLimit = 86,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Migration & Upgrade Errors (90..99)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     MigrationVersionMismatch = 90,
     AlreadyCurrentSchemaVersion = 91,
     NoMigrationPath = 92,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Settlement & Bounds Validation Errors (100..109)
     // -------------------------------------------------------------------------------
     SettlementAmountInvalid = 100,
@@ -72,25 +82,25 @@ pub enum EscrowError {
     EscrowNotInFundedState = 102,
     WithdrawAmountInvalid = 103,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Legal Hold & Operational Pause (200..209)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     LegalHoldActive = 200,
     ContractPaused = 201,
 
     // -------------------------------------------------------------------------------
     // SME Collateral Errors (300..309)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     NoCollateralToClear = 300,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Pause Configuration & Rate-Limit Errors (230..239)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     /// `LiquifactEscrow::set_pause_max_duration` received a duration outside
     /// `MIN_PAUSE_MAX_DURATION_SECS`..=[`MAX_PAUSE_MAX_DURATION_SECS`. Zero is always allowed.
     PauseMaxDurationOutOfRange = 230,
     /// `LiquifactEscrow::set_pause_rate_limit` received a toggle limit outside
-    /// `MIN_PAUSE_TOGGLE_LIMIT`..=[`@MAX_PAUSE_TOGGLE_LIMIT`. Zero is allowed only with zero window.
+    /// `MIN_PAUSE_TOGGLE_LIMIT`..=[`MAX_PAUSE_TOGGLE_LIMIT`. Zero is allowed only with zero window.
     PauseToggleLimitOutOfRange = 231,
     /// `LiquifactEscrow::set_pause_rate_limit` received a window outside
     /// `MIN_PAUSE_TOGGLE_WINDOW_SECS`..=[`MAX_PAUSE_TOGGLE_WINDOW_SECS`. Zero is allowed only with zero toggles.
@@ -101,9 +111,9 @@ pub enum EscrowError {
     /// `LiquifactEscrow::set_paused` blocked because the admin has exceeded the configured pause toggle rate limit.
     PauseToggleRateLimitExceeded = 234,
 
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     // Fee Schedule Errors (240..249)
-    // ------------------------------------------------------------------------------
+    // -------------------------------------------------------------------------------
     /// `LiquifactEscrow::set_fee_schedule` received a fee outside the schedule's declared min/max bounds.
     FeeScheduleOutOfBounds = 240,
     /// `LiquifactEscrow::set_fee_schedule` attempted to create a second pending schedule before the first activates.
@@ -114,4 +124,25 @@ pub enum EscrowError {
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
+
+    // -------------------------------------------------------------------------------
+    // Allowlist Errors (250..259)
+    // -------------------------------------------------------------------------------
+    /// `set_allowlist` was called with an empty address list. Allowlists are
+    /// additive; an empty batch is always a no-op and thus rejected.
+    AllowlistEmpty = 250,
+    /// `set_allowlist` was called with more addresses than `ALLOWLIST_MAX_BATCH_SIZE`.
+    AllowlistBatchExceedsLimit = 251,
+    /// `set_allowlist` received a duplicate address within the same batch.
+    /// Duplicates are rejected outright rather than de-duplicated so the
+    /// caller's intent and the resulting state are unambiguous.
+    AllowlistDuplicateEntry = 252,
+    /// `set_allowlist` was called by an authority that is not the admin.
+    AllowlistUnauthorized = 253,
+    /// `set_allowlist` was called while the contract is paused or under legal hold.
+    AllowlistLocked = 254,
+    /// `set_allowlist` was called after funding has commenced. The allowlist
+    /// is frozen once any contribution is recorded to preserve auditability.
+    AllowlistFrozenAfterFunding = 255,
 }
+impl EscrowError {}
