@@ -4,7 +4,7 @@
 /// Uses mocked token implementations where feasible in the Soroban test harness.
 
 use super::super::external_calls::{
-    transfer_funding_token_with_balance_checks, transfer_into_escrow_with_balance_checks,
+    transfer_funding_token_inbound_with_balance_checks, transfer_funding_token_with_balance_checks,
 };
 use super::*;
 use soroban_sdk::{
