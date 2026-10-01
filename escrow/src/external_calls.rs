@@ -143,6 +143,7 @@ use soroban_sdk::contracttype;
 /// - Balance manipulation or integration bugs
 ///
 /// # Arguments
+
 ///
 /// * `env` - The Soroban environment
 /// * `token_addr` - Address of the SEP-41 token contract
@@ -187,6 +188,54 @@ pub fn transfer_funding_token_with_balance_checks(
 
     let from_after = token.balance(from);
     let treasury_after = token.balance(treasury);
+
+    let spent = checked_balance_delta(
+        env,
+        from_after,
+        from_before,
+        EscrowError::SenderBalanceUnderflow,
+    );
+    let received = checked_balance_delta(
+        env,
+        treasury_before,
+        treasury_after,
+        EscrowError::RecipientBalanceUnderflow,
+    );
+
+    assert_conservation(env, spent, received, amount);
+}
+
+/// Transfer `amount` of `token` from an external payer into the escrow contract,
+/// then verify the recipient balance increased by exactly `amount`.
+///
+/// The sender balance must not increase during the call. A sender increase is
+/// rejected by the checked subtraction below, while an under-delivery or
+/// over-delivery to the escrow is rejected by the exact recipient delta check.
+/// These checks keep inbound custody compatible with the outbound transfer
+/// boundary and make fee-on-transfer, rebasing, and hook-token behavior fail
+/// deterministically.
+pub fn transfer_into_escrow_with_balance_checks(
+    env: &Env,
+    token: &Address,
+    from: &Address,
+    to_contract: &Address,
+    amount: i128,
+) {
+    ensure(env, amount > 0, EscrowError::TransferAmountNotPositive);
+
+    let token_client = TokenClient::new(env, token);
+    let from_before = token_client.balance(from);
+    let contract_before = token_client.balance(to_contract);
+    ensure(
+        env,
+        from_before >= amount,
+        EscrowError::InsufficientTokenBalanceBeforeTransfer,
+    );
+
+    token_client.transfer(from, MuxedAddress::from(to_contract.clone()), &amount);
+
+    let from_after = token_client.balance(from);
+    let contract_after = token_client.balance(to_contract);
 
     let spent = from_before
         .checked_sub(from_after)
