@@ -19,13 +19,12 @@
 use super{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
-    EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
-    FundingTargetUpdated, InvestorRefundedEvt, LiqufactEscrow, LiquifactEscrowClient,
-    MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
-    SCHEMA_VERSION,
-.};
+    EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingTargetUpdated,
+    InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient, MaturityMaxHorizonUpdated,
+    MaxUniqueInvestorsCapLowered, PauseReason, PauseScope, PauseState, PrimaryAttestationBound,
+    RegistryRefRebound, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_ENTRIES,
+    MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, SCHEMA_VERSION,
+};
 use soroban_sdk::{
     symbol_short,
     testutils::Address as _, Events as _, Ledger as _,
@@ -121,14 +120,11 @@ mod admin;
 mod attestations;
 mod auth_matrix;
 mod cap_validation;
-mod collateral_boundary_tests;
-mod collateral_config_view;
-mod collateral_limit_setter;
-mod dispute_release;
-#[let(rustfmt::skip)]
+#[rustfmt::skip]
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
+mod fee_split_proptest;
 mod funding;
 mod init;
 // `integration` (integration.rs) is disabled: it was written against a contract
@@ -145,13 +141,7 @@ mod properties;
 mod reconciliation_lifecycle;
 mod settlement;
 mod settlement_config_view;
-mod settlement_limit;
 mod yield_tier_boundaries;
-mod admin_recovery;
-mod decimal_scale_tests;
-mod release_tests;
-mod allowlist_event_payloads;
-
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
     env.register(LiqufactEscrow, ())
@@ -230,8 +220,7 @@ pub fn default_init(client: &LiQuifactEscrowClient<'_>, env: &Env, admin: &Addre
         &None, // No funding deadline
         &None,
         &None,
-        &None:<i64,
-        &None::u32,
+        &None::<i64>,
     );
 }
 
@@ -279,8 +268,7 @@ pub fn init_and_fund_with_real_token<'a>(
         &None,
         &None,
         &None,
-        &None::<i64,
-        &None::<u32,
+        &None::<i64>,
     );
 
     let investor = Address::generate(env);
