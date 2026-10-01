@@ -110,7 +110,6 @@ fn do_init(
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 }
 
@@ -183,7 +182,6 @@ fn get_investors_first_page() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     // Fund with 5 investors
@@ -236,7 +234,6 @@ fn get_investors_continuation_page() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     let mut investors = soroban_sdk::Vec::new(&env);
@@ -287,7 +284,6 @@ fn get_investors_start_past_end_returns_empty() {
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     let inv = Address::generate(&env);
@@ -324,7 +320,6 @@ fn setup_allowlist_escrow(env: &Env) -> (crate::LiquifactEscrowClient<'_>, Addre
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     (client, admin, sme)
 }
@@ -450,7 +445,6 @@ fn setup_attestation_escrow(env: &Env) -> (crate::LiquifactEscrowClient<'_>, Add
         &None,
         &None,
         &None::<i64>,
-        &None::<u32>,
     );
     (client, admin)
 }
