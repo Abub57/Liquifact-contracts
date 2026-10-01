@@ -69,6 +69,15 @@
 use crate::{assert_conservation, ensure, fail, EscrowError};
 use soroban_sdk::{token::TokenClient, Address, Env, MuxedAddress};
 
+/// Computes a post-call balance delta without allowing underflow to be hidden by a
+/// wrapping conversion.  Every token call in this module uses this helper so the
+/// outbound and inbound paths enforce the same failure semantics.
+fn checked_balance_delta(env: &Env, before: i128, after: i128, error: EscrowError) -> i128 {
+    after
+        .checked_sub(before)
+        .unwrap_or_else(|| fail(env, error))
+}
+
 /// Transfer `amount` of `token_addr` from `from` (typically this escrow contract) to `treasury`,
 /// then verify SEP-41-style conservation: sender decreases and recipient increases by exactly
 /// `amount`.
@@ -126,12 +135,18 @@ pub fn transfer_funding_token_with_balance_checks(
     let from_after = token.balance(from);
     let treasury_after = token.balance(treasury);
 
-    let spent = from_before
-        .checked_sub(from_after)
-        .unwrap_or_else(|| fail(env, EscrowError::SenderBalanceUnderflow));
-    let received = treasury_after
-        .checked_sub(treasury_before)
-        .unwrap_or_else(|| fail(env, EscrowError::RecipientBalanceUnderflow));
+    let spent = checked_balance_delta(
+        env,
+        from_after,
+        from_before,
+        EscrowError::SenderBalanceUnderflow,
+    );
+    let received = checked_balance_delta(
+        env,
+        treasury_before,
+        treasury_after,
+        EscrowError::RecipientBalanceUnderflow,
+    );
 
     assert_conservation(env, spent, received, amount);
 }
@@ -231,12 +246,18 @@ pub fn transfer_funding_token_inbound_with_balance_checks(
     let investor_after = token.balance(investor);
     let contract_after = token.balance(to);
 
-    let spent = investor_before
-        .checked_sub(investor_after)
-        .unwrap_or_else(|| fail(env, EscrowError::InboundSenderBalanceUnderflow));
-    let received = contract_after
-        .checked_sub(contract_before)
-        .unwrap_or_else(|| fail(env, EscrowError::InboundRecipientBalanceUnderflow));
+    let spent = checked_balance_delta(
+        env,
+        investor_after,
+        investor_before,
+        EscrowError::InboundSenderBalanceUnderflow,
+    );
+    let received = checked_balance_delta(
+        env,
+        contract_before,
+        contract_after,
+        EscrowError::InboundRecipientBalanceUnderflow,
+    );
 
     assert_conservation(env, spent, received, amount);
 }
