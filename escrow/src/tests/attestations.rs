@@ -1,4 +1,5 @@
 //! Attestation tests: `bind_primary_attestation_hash` (single-set),
+//! Attestation tests: `bind_primary_attestation_hash` (single-set),
 //! `append_attestation_digest` (single-entry, bounded by [`MAX_ATTESTATION_APPEND_ENTRIES`]),
 //! and `append_attestation_digests` (batch, bounded by [`MAX_ATTESTATION_APPEND_BATCH`]).
 //!
