@@ -168,41 +168,20 @@ pub enum EscrowError {
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
 
-    // ----------------------------------------------------------------------------
-    // Deterministic Recovery Errors (400..409)
-    // ----------------------------------------------------------------------------
-    /// A previous operation was interrupted and left a recovery marker in
-    /// storage. The caller must invoke the corresponding recovery entry
-    /// point before proceeding. This is deterministic: the marker contents
-    /// the exact step that must be resumed.
-    RecoveryRequired = 400,
-    /// A recovery entry point was invoked but no recovery marker is present.
-    /// This is a permanent rejection and indicates a caller bug or a stale
-    /// off-chain view.
-    NoRecoveryPending = 401,
-    /// The recovery marker is present but the caller did not supply the
-    /// authorization required to complete recovery (e.g. admin approval).
-    RecoveryUnauthorized = 402,
-    /// The recovery attempt failed because the underlying dependency (token
-    /// contract) was still unavailable. The recovery marker remains set and
-    /// the caller may retry after backoff without risk of double-applying.
-    RecoveryDependencyUnavailable = 403,
-    /// The recovery attempt detected that the persisted state is inconsistent
-    /// with the recovery marker (e.g. a partially applied transfer that did not
-    /// record its led). This is a permanent failure that requires admin
-    /// intervention; the contract will not silently proceed.
-    RecoveryStateInconsistent = 404,
-    /// The recovery attempt exceeded the maximum number of attempts allowed
-    /// within the configured window. The marker remains set and the admin
-    /// must intervene to avoid an unrecoverable loop.
-    RecoveryAttemptsExhausted = 405,
-    /// The recovery attempt was rejected because a concurrent caller has
-    /// already claimed the recovery lock. This is transient and safe to
-    /// retry after the lock is released.
-    RecoveryConcurrentAttempt = 406,
-    /// The recovery marker was cleared but the corresponding compensating
-    /// action could not be completed. The marker is re-set so recovery can
-    /// be retried deterministically.
-    RecoveryCompensationFailed = 407,
+    // ------------------------------------------------------------------------------
+    // Failure Recovery Errors (250..259)
+    // ------------------------------------------------------------------------------
+    /// A recovery attempt was made without a recorded failure context, so the
+    /// escrow cannot deterministically restore prior state.
+    RecoveryContextMissing = 250,
+    /// The supplied recovery snapshot does not match the persisted escrow state,
+    /// indicating a partial or concurrent mutation that must not be applied.
+    RecoveryStateMismatch = 251,
+    /// A recovery operation was requested while the escrow is not in a failed
+    /// state; recovery is only valid after an observable failure.
+    RecoveryNotApplicable = 252,
+    /// The recovery attempt would violate a state-transition invariant and was
+    /// rejected to prevent silent data loss or inconsistent state.
+    RecoveryInvariantViolation = 253,
 }
 impl EscrowError {}

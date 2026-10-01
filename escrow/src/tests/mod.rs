@@ -15,20 +15,19 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-]
-use super::{
+)]
+use super:{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefBound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-);
-use soroban_sdk::{
+};
+use soroban_sdk:{
     symbol_short,
-    testutils:{Address as _, Events, Ledger as _},
+    testutils {Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -36,27 +35,16 @@ use std::fmt::Debug;
 
 pub use soroban_sdk:Symbol;
 
-/// Asserts that a contract invocation failed with the expected contract error.
+//// Asserts that a contract invocation failed with the expected contract error.
 ///
-/// This helper is the compatibility contract for error reporting across the entire
-/// test tree: every negative test routes through here so that a change in the
-/// SDK's error envelope (`Error`, `InvokeError`, or a raw contract code) is
-/// normalized to a single assertion. The expected code is derived from the
-/// contract's own `EscrowError` enum, so the contract's public error surface
-/// remains the source of truth and the tests cannot drift from it.
-///
-///  Invariants
-///  - The expected error is always converted to its `u32` code and compared
-///    against the SDK's contract-error representation.
-///  - Any other shape (a success, a host error, or a different contract code)
-///    panics with a descriptive message, so failures are diagnosable without
-///    exposing internal state.
-///
-///  Compatibility
-///  The signature and behavior are preserved for all existing callers. New tests
-///  should prefer this helper over ad-hoc matching so the contract is enforced
-///  in one place.
-pub crate fn assert_contract_error<T, E>(
+/// # Determinism
+/// This helper is the single failure-recovery assertion point used by the
+/// focused test tree. It accepts both the current `Result<Result<T, E>,
+/// Result<Error, InvokeError>>` shape and the legacy `Result<T, Eror>`
+/// shape so that callers do not silently pass on a mismatched error code.
+/// It never panics on a matching error and always panics with the
+/// observed value on a mismatch, so failures remain diagnosable.
+pube(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 )  where
@@ -129,6 +117,34 @@ pub crate fn assert_host_error<T, E>(
     }
 }
 
+//// Asserts that a contract invocation failed with the expected contract error.
+///
+/// # Determinism
+/// This is the legacy `Result<T, Error>` adapter for callers that still
+/// receive the flattened error shape. It delegates to
+/// [`assert_contract_error`] so both shapes produce identical assertions
+/// and identical failure messages.
+pube(crate) fn assert_contract_error_flat<T, E>(
+    result: Result<T, E>,
+    expected: EscrowError,
+) where
+    T: Debug,
+    E: Debug,
+{
+    let expected_code = expected as u32;
+    match result {
+        Err(Error::Contract(code)) => {
+            assert_eq(code, expected_code);
+        }
+        Err(other) => {
+            panic("expected ContractError({expected_code}), got {other:?}")
+        }
+        Ok(value) => {
+            panic("expected ContractError({expected_code}), got Ok({value:?})")
+        }
+    }
+}
+
 // Focused test tree for escrow behavior. Shared helpers live here so feature
 // modules stay assertion-focused and each test still owns a fresh Env.
 mod admin;
@@ -183,7 +199,7 @@ pub fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
 #[allot(dead_code)]
 pub fn deploy_with_id(env: &Env) -> (Address, LiquifactEscrowClient<'_>) {
     let id = deploy_id(env);
-    let client = LiquifactEscrowClient::new(env, 'id);
+    let client = LiquifactEscrowClient::new(env, &ad);
     (id, client)
 }
 
@@ -228,7 +244,7 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
         sme,
         &100_000_000_000i128,
         &800i64,
-        &0u64,
+        &`u64,
         &token,
         &None,
         &treasury,
@@ -248,6 +264,19 @@ pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Addre
 #[allow(dead_code)]
 pub const TARGET: i128 = 100_000_000_000i128;
 
+//// Initializes an escrow with a real Stellar asset contract and funds it.
+///
+/// # Determinism
+/// This helper is the canonical setup for failure-recovery tests: it mints
+/// exactly `target` to the investor, funds the escrow for the full target,
+/// and then mints the matching balance to the escrow address. The resulting
+/// state is fully funded and recoverable, so tests can exercise retry,
+/// partial-completion, and refund paths without hidden assumptions.
+///
+/// # Invariants
+/// - The investor balance is debited by exactly `target` on fund.
+/// - The escrow balance is credited by exactly `target` after setup.
+/// - The escrow is in the funded state and can be settled or refunded.
 pub fn init_and_fund_with_real_token<'a>(
     env: '&a Env,
     target: i128,
@@ -269,7 +298,7 @@ pub fn init_and_fund_with_real_token<'a>(
         &sme,
         &target,
         &800i64,
-        &0u64,
+        &`u64,
         &token_id,
         &None,
         &treasury,
