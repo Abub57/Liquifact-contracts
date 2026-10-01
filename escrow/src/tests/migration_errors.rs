@@ -1,32 +1,27 @@
-// migration_errors.rs – standalone smoke tests for migrate() typed-error branches.
+// migration_errors.rs – compatibility regression for version / migrate / init bounds.
 //
-// These tests are intentionally minimal: they deploy a fresh contract, init it,
-// and verify that each documented error branch is reachable. Comprehensive
-// coverage (including DataKey::Version immutability, historical-version sweeps,
-// and auth-first ordering) lives in the anchoring suite in tests/admin.rs.
+// Covers #1270: deterministic typed errors, empty-state defaults, duplicate
+// handling, boundary versions, nonce gating, and storage persistence.
 
 use super::*;
 
-/// Calling migrate(stored_version - 1) with the correct stored version
-/// must raise MigrationVersionMismatch (stored != from_version).
-#[test]
-fn test_migration_version_mismatch() {
-    let env = Env::default();
-    env.mock_all_auths();
-    let client = deploy(&env);
-    let admin = Address::generate(&env);
-    let sme = Address::generate(&env);
-
+fn init_client(
+    env: &Env,
+    client: &LiquifactEscrowClient<'_>,
+    admin: &Address,
+    sme: &Address,
+    id: &str,
+) {
     client.init(
-        &admin,
-        &soroban_sdk::String::from_str(&env, "MIGSMK1"),
-        &sme,
+        admin,
+        &soroban_sdk::String::from_str(env, id),
+        sme,
         &1_000i128,
         &500i64,
         &0u64,
-        &Address::generate(&env),
+        &Address::generate(env),
         &None,
-        &Address::generate(&env),
+        &Address::generate(env),
         &None,
         &None,
         &None,
@@ -38,54 +33,49 @@ fn test_migration_version_mismatch() {
         &None::<i64>,
         &None::<u32>,
     );
+}
 
+#[test]
+fn test_migration_version_mismatch() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (contract_id, client) = deploy_with_id(&env);
+    let admin = Address::generate(&env);
+    let sme = Address::generate(&env);
+    init_client(&env, &client, &admin, &sme, "MIGSMK1");
     // stored = SCHEMA_VERSION (6), from_version = 5 → mismatch
     assert_contract_error(
         client.try_migrate(&(SCHEMA_VERSION - 1), &0u32),
         EscrowError::MigrationVersionMismatch,
     );
+
+    // Recovery invariant: the rejected migration must not have advanced or
+    // otherwise mutated the stored version, so a corrected retry is safe.
+    assert_version_unchanged(&env, &client.address, SCHEMA_VERSION);
 }
 
-/// Calling migrate(SCHEMA_VERSION) with stored=SCHEMA_VERSION must raise
-/// AlreadyCurrentSchemaVersion (from_version >= SCHEMA_VERSION after mismatch passes).
 #[test]
 fn test_already_current_schema_version() {
     let env = Env::default();
     env.mock_all_auths();
-    let client = deploy(&env);
+    let (contract_id, client) = deploy_with_id(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &soroban_sdk::String::from_str(&env, "MIGSMK2"),
-        &sme,
-        &1_000i128,
-        &500i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
+    init_client(&env, &client, &admin, &sme, "MIGSMK2");
     assert_contract_error(
         client.try_migrate(&SCHEMA_VERSION, &0u32),
         EscrowError::AlreadyCurrentSchemaVersion,
     );
+
+    // Idempotent rejection: retrying the same call yields the same error and
+    // leaves the version untouched.
+    assert_contract_error(
+        client.try_migrate(&SCHEMA_VERSION, &0u32),
+        EscrowError::AlreadyCurrentSchemaVersion,
+    );
+    assert_version_unchanged(&env, &client.address, SCHEMA_VERSION);
 }
 
-/// Calling migrate(1) when stored version is manually set to 1 must raise
-/// NoMigrationPath (from_version < SCHEMA_VERSION, no migration branch).
 #[test]
 fn test_no_migration_path() {
     let env = Env::default();
@@ -93,30 +83,7 @@ fn test_no_migration_path() {
     let (contract_id, client) = deploy_with_id(&env);
     let admin = Address::generate(&env);
     let sme = Address::generate(&env);
-
-    client.init(
-        &admin,
-        &soroban_sdk::String::from_str(&env, "MIGSMK3"),
-        &sme,
-        &1_000i128,
-        &500i64,
-        &0u64,
-        &Address::generate(&env),
-        &None,
-        &Address::generate(&env),
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None,
-        &None::<i64>,
-        &None::<u32>,
-    );
-
-    // Set stored version to 1 so from_version=1 matches
+    init_client(&env, &client, &admin, &sme, "MIGSMK3");
     env.as_contract(&contract_id, || {
         env.storage().instance().set(&DataKey::Version, &1u32);
     });
