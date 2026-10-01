@@ -1208,7 +1208,10 @@ fn test_migrate_below_schema_version_matching_stored_raises_no_path() {
         env.storage().instance().set(&DataKey::Version, &older);
     });
 
-    assert_contract_error(client.try_migrate(&older, &0u32), EscrowError::NoMigrationPath);
+    assert_contract_error(
+        client.try_migrate(&older, &0u32),
+        EscrowError::NoMigrationPath,
+    );
     assert_eq!(
         client.get_version(),
         older,
@@ -1248,7 +1251,10 @@ fn test_migrate_from_zero_uninitialized_raises_no_path() {
     env.mock_all_auths();
     let client = deploy(&env);
 
-    assert_contract_error(client.try_migrate(&0u32, &0u32), EscrowError::NoMigrationPath);
+    assert_contract_error(
+        client.try_migrate(&0u32, &0u32),
+        EscrowError::NoMigrationPath,
+    );
 
     let stored_after: u32 = env.as_contract(&client.address, || {
         env.storage().instance().get(&DataKey::Version).unwrap_or(0)
@@ -3863,4 +3869,102 @@ fn test_pending_admin_remaining_consistent_with_accept_admin() {
     env.ledger().set_timestamp(expiry + 1);
     assert_eq!(client.get_pending_admin_remaining_secs(), Some(0));
     assert_contract_error(client.try_accept_admin(), EscrowError::AdminProposalExpired);
+}
+
+// --- Admin state-invariant regression coverage (issue #1297) -----------------
+//
+// Admin mutations use a replay-protection nonce that is consumed before some
+// later validation checks. Soroban transaction atomicity must therefore roll
+// back *both* the nonce and all pending-admin state whenever a call rejects.
+// These tests snapshot the externally observable admin state before rejection
+// and assert that retries cannot partially advance governance state.
+
+#[test]
+fn rejected_admin_proposals_preserve_nonce_admin_and_pending_state() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let pending = Address::generate(&env);
+    let replacement = Address::generate(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    client.propose_admin(&pending, &0u32);
+
+    let admin_before = client.get_escrow().admin;
+    let pending_before = client.get_pending_admin();
+    let nonce_before = client.get_admin_nonce();
+    assert_eq!(nonce_before, 1);
+
+    // Duplicate proposal fails after nonce consumption is attempted. The
+    // failed invocation must roll the nonce back to the pre-call value.
+    assert_contract_error(
+        client.try_propose_admin(&pending, &nonce_before),
+        EscrowError::PendingAdminUnchanged,
+    );
+    assert_eq!(client.get_admin_nonce(), nonce_before);
+    assert_eq!(client.get_pending_admin(), pending_before);
+    assert_eq!(client.get_escrow().admin, admin_before);
+
+    // Proposing the current admin is also rejected after the nonce guard.
+    assert_contract_error(
+        client.try_propose_admin(&admin, &nonce_before),
+        EscrowError::NewAdminSameAsCurrent,
+    );
+    assert_eq!(client.get_admin_nonce(), nonce_before);
+    assert_eq!(client.get_pending_admin(), pending_before);
+    assert_eq!(client.get_escrow().admin, admin_before);
+
+    // A future/stale nonce must fail before any proposal state changes.
+    assert_contract_error(
+        client.try_propose_admin(&replacement, &nonce_before.saturating_add(7)),
+        EscrowError::AdminNonceMismatch,
+    );
+    assert_eq!(client.get_admin_nonce(), nonce_before);
+    assert_eq!(client.get_pending_admin(), pending_before);
+    assert_eq!(client.get_escrow().admin, admin_before);
+}
+
+#[test]
+fn rejected_admin_proposal_retry_is_deterministic() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let pending = Address::generate(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    client.propose_admin(&pending, &0u32);
+    let nonce = client.get_admin_nonce();
+    let snapshot_admin = client.get_escrow().admin;
+    let snapshot_pending = client.get_pending_admin();
+
+    for _ in 0..2 {
+        assert_contract_error(
+            client.try_propose_admin(&pending, &nonce),
+            EscrowError::PendingAdminUnchanged,
+        );
+        assert_eq!(client.get_admin_nonce(), nonce);
+        assert_eq!(client.get_pending_admin(), snapshot_pending);
+        assert_eq!(client.get_escrow().admin, snapshot_admin);
+    }
+}
+
+#[test]
+fn unauthorized_admin_proposal_cannot_mutate_governance_state() {
+    let env = Env::default();
+    let (client, admin, sme) = setup(&env);
+    let candidate = Address::generate(&env);
+    default_init(&client, &env, &admin, &sme);
+
+    let admin_before = client.get_escrow().admin;
+    let nonce_before = client.get_admin_nonce();
+    let pending_before = client.get_pending_admin();
+
+    // Remove setup's blanket auth so the current admin cannot authorize.
+    env.mock_auths(&[]);
+    assert!(client.try_propose_admin(&candidate, &nonce_before).is_err());
+
+    // Restore mock auth only for readback assertions; the rejected transaction
+    // must not have changed any governance state.
+    env.mock_all_auths();
+    assert_eq!(client.get_admin_nonce(), nonce_before);
+    assert_eq!(client.get_pending_admin(), pending_before);
+    assert_eq!(client.get_escrow().admin, admin_before);
 }
