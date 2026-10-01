@@ -71,6 +71,7 @@ mod coverage;
 mod coverage_invariants;
 mod external_calls;
 mod external_calls_mocked;
+mod fee_split_proptest;
 mod funding;
 mod init;
 // `integration` (integration.rs) is disabled: it was written against a contract
