@@ -115,24 +115,7 @@ pub enum EscrowError {
     FeeScheduleSameAsActive = 243,
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
-
-    // ------------------------------------------------------------------------------
-    // Deterministic Failure Recovery Errors (400..419)
-    // ------------------------------------------------------------------------------
-    /// A recovery attempt referenced a checkpoint that does not exist or has been
-    /// pruned. Recovery must fail closed rather than silently resetting state.
-    RecoveryCheckpointNotFound = 400,
-    /// A recovery attempt was made against a checkpoint whose recorded state hash
-    /// does not match the current persisted state. This indicates either tampering
-    /// or a partial write; recovery must abort to avoid inconsistent state.
-    RecoveryCheckpointMismatch = 401,
-    /// A recovery operation was requested while another recovery is already in
-    /// progress. Concurrent recovery is rejected to keep the outcome deterministic.
-    RecoveryAlreadyInProgress = 402,
-    /// A recovery operation was requested but no recovery is currently in progress.
-    /// Callers must not attempt to finalize/abort a recovery that was never started.
-    RecoveryNotInProgress = 403,
-    /// A recovery attempt was rejected because the caller is not authorized to
-    /// perform recovery for this escrow instance.
-    RecoveryUnauthorized = 404,
+    /// `LiquifactEscrow::set_attestation_config` received a configuration value
+    /// outside the accepted validation boundary.
+    AttestationConfigOutOfBounds = 246,
 }
