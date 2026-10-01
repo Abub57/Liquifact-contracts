@@ -115,3 +115,4 @@ pub enum EscrowError {
     FundingTokenScaleInvalid = 244,
     FundingTokenScaleNotSet = 245,
 }
+impl EscrowError {}
