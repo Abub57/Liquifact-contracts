@@ -2356,6 +2356,7 @@ fn test_raise_equal_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_contract_error(
@@ -2390,6 +2391,7 @@ fn test_raise_lower_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_contract_error(
@@ -2424,6 +2426,7 @@ fn test_raise_no_cap_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_contract_error(
@@ -2459,6 +2462,7 @@ fn test_raise_when_funded_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     // Fund to close the escrow.
@@ -2498,6 +2502,7 @@ fn test_raise_max_unique_investors_requires_admin_auth() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     client.raise_max_unique_investors(&5u32);
@@ -2536,6 +2541,7 @@ fn test_raise_max_unique_investors_unauthorized_panics() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     env.mock_auths(&[]);
@@ -2573,6 +2579,7 @@ fn test_raise_max_unique_investors_emits_event() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let returned = client.raise_max_unique_investors(&7u32);
@@ -2619,6 +2626,7 @@ fn test_raise_max_unique_investors_returns_new_cap() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let returned = client.raise_max_unique_investors(&9u32);
@@ -2653,6 +2661,7 @@ fn test_raise_then_lower_cap_round_trip() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_eq!(client.get_max_unique_investors_cap(), Some(3u32));
@@ -2708,6 +2717,7 @@ fn test_lower_floor_funded_state_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     // Fund to close the escrow.
@@ -2747,6 +2757,7 @@ fn test_lower_floor_not_lower_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     // Same value.
@@ -2789,6 +2800,7 @@ fn test_lower_floor_zero_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_contract_error(
@@ -2824,6 +2836,7 @@ fn test_lower_floor_negative_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_contract_error(
@@ -2861,6 +2874,7 @@ fn test_raise_max_per_investor_funded_state_rejected() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     // Two investors each at the per-investor cap — escrow reaches target and closes.
@@ -2900,6 +2914,7 @@ fn test_raise_max_per_investor_lower_value_typed_error() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     assert_contract_error(
@@ -2941,6 +2956,7 @@ fn test_fund_batch_rejects_when_unique_investor_cap_would_be_exceeded() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let inv1 = Address::generate(&env);
@@ -2987,6 +3003,7 @@ fn test_fund_batch_rejects_entry_below_min_floor() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let good = Address::generate(&env);
@@ -3028,6 +3045,7 @@ fn test_fund_batch_rejects_entry_exceeding_per_investor_cap() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let inv1 = Address::generate(&env);
@@ -3072,6 +3090,7 @@ fn test_cap_state_readable_after_cancel() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let inv1 = Address::generate(&env);
@@ -3122,6 +3141,7 @@ fn test_unique_funder_count_idempotent_for_repeat_investor() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let investor = Address::generate(&env);
@@ -3168,6 +3188,7 @@ fn test_all_three_caps_coexist_enforce_independently() {
         &None,
         &None,
         &None::<i64>,
+        &None::<u32>,
     );
 
     let inv1 = Address::generate(&env);

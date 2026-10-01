@@ -21,10 +21,10 @@ use super::{
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
-    MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
-    SCHEMA_VERSION,
+    MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, MaxUniqueInvestorsCapRaised,
+    PrimaryAttestationBound, RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier,
+    MAX_ATTESTATION_APPEND_BATCH, MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT,
+    MAX_FUND_BATCH, RENT_WARN_LEDGERS, SCHEMA_VERSION,
 };
 use soroban_sdk::{
     symbol_short,
