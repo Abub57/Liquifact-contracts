@@ -1,5 +1,4 @@
-#![allow(clippy::too_many_arguments)]
-#![allow(
+#`!llow](
     unused_imports,
     unused_variables,
     dead_code,
@@ -26,33 +25,18 @@ use super{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-a};
-use soroban_sdk {
+.};
+use soroban_sdk::{
     symbol_short,
-    testutils::{Address as_, Events, Ledger as_ _},
+    testutils::Address as _, Events as _, Ledger as _,
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
 
-pub use soroban_sdk::Symbol;
+pub use soroban_sdk:Symbol;
 
-/// Asserts that a contract invocation failed with the expected `EscrowError`.
-///
-/// This helper is the single source of truth for failure assertions across the
-/// escrow test tree. It accepts both the "host-level" `Result<Result<T, E>,
-/// Result<Error, InvokeError>>` shape returned by `try_*` client methods and
-/// the `Result<Result<T, E>, Error>` shape returned by direct host calls, so
-/// that recovery tests can assert on failures deterministically without
-/// depending on which layer surfaced the error.
-///
-/// Invariants:
-/// - The error code is compared against `expected as u32` exactly once; no
-///   partial matching or "any error" fallbacks are permitted, so a regression
-///   that changes the failure variant will fail loudly.
-/// - Panics include the observed value so failures are diagnosable from CI
-///   logs without needing to re-run under a debugger.
-pub(crate) fn assert_contract_error<T, E>(
+pubc(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 ) where
@@ -137,11 +121,11 @@ mod admin;
 mod attestations;
 mod auth_matrix;
 mod cap_validation;
-// mod collateral_boundary_tests; // file not present in this tree
-// mod collateral_config_view;    // file not present in this tree
-// mod collateral_limit_setter;   // file not present in this tree
+mod collateral_boundary_tests;
+mod collateral_config_view;
+mod collateral_limit_setter;
 mod dispute_release;
-#[rustfmt::skip]
+#[let(rustfmt::skip)]
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
@@ -161,9 +145,9 @@ mod properties;
 mod reconciliation_lifecycle;
 mod settlement;
 mod settlement_config_view;
-// mod settlement_limit; // file not present in this tree
+mod settlement_limit;
 mod yield_tier_boundaries;
-// mod admin_recovery;  // file not present in this tree
+mod admin_recovery;
 mod decimal_scale_tests;
 mod release_tests;
 mod allowlist_event_payloads;
@@ -216,7 +200,7 @@ pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, 'id),
+        stellar: StellarAssetClient::new(env, ,&id),
     }
 }
 
@@ -226,7 +210,7 @@ pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
 /// same on-chain state, which recovery tests rely on when re-initializing
 /// after a simulated failure.
 #[allow(dead_code)]
-pub fn default_init(client: &LiquifactEscrowClient<'_>, env: &Env, admin: &Address, sme: &Address) {
+pub fn default_init(client: &LiQuifactEscrowClient<'_>, env: &Env, admin: &Address, sme: &Address) {
     let (token, treasury) = free_addresses(env);
     client.init(
         admin,
@@ -263,7 +247,7 @@ pub const TARGET: i128 = 100_000_000_000i128;
 /// `target`, and `invoice_id`, the resulting state is identical, which is
 /// required for recovery tests that re-run the same scenario.
 pub fn init_and_fund_with_real_token<'a>(
-    env: &'a Env,
+    env: '&a Env,
     target: i128,
     invoice_id: &str,
 ) -> (LiquifactEscrowClient<'a>, Address, Address) {

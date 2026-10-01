@@ -1,10 +1,12 @@
-# Collateral Invariants
+# Collateral Validation Boundaries
 
 This document enumerates the invariants that must always hold for the **SME collateral commitment** metadata in the LiquiFact escrow contract.
 
 > **Compatibility contract:** The entry points, storage key, error codes, and event payloads described below are part of the public interface. Any change to their names, signatures, error semantics, or payload shape must ship with a tested migration path and an updated version of this document.
 
 ---
+
+## Validation Boundaries
 
 ## Overview
 
@@ -36,7 +38,7 @@ The storage key `DataKey::SmeCollateralPledge` and the event symbol `CollateralR
 
 ---
 
-The invariants above must hold for valid, invalid, duplicate, and boundary‑case inputs. In particular, repeated calls with identical arguments must be deterministic, and concurrent or retried calls must not be able to violate invariants 1‑3 or 5.
+## Boundary Cases
 
 ## Enforcement Locations
 
@@ -48,7 +50,7 @@ The invariants above must hold for valid, invalid, duplicate, and boundary‑cas
 
 ---
 
-The numeric error codes listed above are part of the public ABI. They must not be renumbered or reused; new failure modes must be assigned fresh codes and documented here.
+## Duplicate & Invalid Input Handling
 
 ## Related Entry Points
 
@@ -60,7 +62,7 @@ The numeric error codes listed above are part of the public ABI. They must not b
 
 ---
 
-The getter must remain read‑only and must never panic on missing data; it returns `None` when no pledge is present. Empty or malformed stored data must be treated as `None` rather than causing an unrecoverable error.
+## Failure Modes & Observability
 
 ## Security & Design Notes
 
