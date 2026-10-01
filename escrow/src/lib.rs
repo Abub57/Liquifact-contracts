@@ -195,6 +195,10 @@ pub const EVENT_SCHEMA_VERSION: u32 = 1;
 /// Revocation via [`LiquifactEscrow::revoke_attestation_digest`] does not consume a slot.
 pub const MAX_ATTESTATION_APPEND_ENTRIES: u32 = 32;
 
+/// Maximum number of addresses that may appear in a single allowlist event payload.
+/// Mirrors [`MAX_INVESTOR_ALLOWLIST_BATCH`] so event consumers can bound their decode buffers.
+pub const MAX_ALLOWLIST_EVENT_ADDRESSES: u32 = MAX_INVESTOR_ALLOWLIST_BATCH;
+
 /// Maximum number of indices that can be revoked in a single batch call.
 pub const MAX_ATTESTATION_REVOKE_BATCH: u32 = 32;
 
@@ -205,6 +209,61 @@ pub const MAX_ATTESTATION_REVOKE_BATCH: u32 = 32;
 /// per-call CPU/storage work predictable and consistent with the rest of the
 /// admin-batch API surface.
 pub const MAX_BUMP_TTL_BATCH: u32 = 32;
+
+/// Validation boundary errors for allowlist event payloads.
+///
+/// These are emitted before any storage mutation or event publication so that
+/// malformed allowlist batches fail deterministically and are diagnosable by
+/// off-chain indexers without exposing sensitive data.
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum AllowlistPayloadError {
+    /// The batch contained zero addresses; an empty allowlist event is meaningless.
+    EmptyBatch = 1,
+    /// The batch exceeded [`MAX_INVESTOR_ALLOWLIST_BATCH`].
+    BatchTooLarge = 2,
+    /// The same address appeared more than once in the batch.
+    DuplicateAddress = 3,
+    /// An address in the batch was the zero/contract address (invalid principal).
+    InvalidAddress = 4,
+}
+
+/// Validate an allowlist batch payload against the documented boundaries.
+///
+/// Enforces, in order:
+/// 1. Non-empty (`EmptyBatch`).
+/// 2. `len <= MAX_INVESTOR_ALLOWLIST_BATCH` (`BatchTooLarge`).
+/// 3. No duplicate addresses (`DuplicateAddress`).
+///
+/// Returns `Ok(())` when the payload is safe to persist and emit. This is a pure
+/// read-only check: it performs no storage writes and no event emission, so it can
+/// be called before `require_auth` without weakening the auth boundary.
+pub fn validate_allowlist_payload(
+    env: &Env,
+    addresses: &Vec<Address>,
+) -> Result<(), AllowlistPayloadError> {
+    let n = addresses.len();
+    if n == 0 {
+        return Err(AllowlistPayloadError::EmptyBatch);
+    }
+    if n > MAX_INVESTOR_ALLOWLIST_BATCH {
+        return Err(AllowlistPayloadError::BatchTooLarge);
+    }
+    // O(n^2) duplicate scan is bounded by MAX_INVESTOR_ALLOWLIST_BATCH (32),
+    // so worst-case work is ~512 comparisons — well within host budget.
+    for i in 0..n {
+        let a = addresses.get(i).unwrap();
+        for j in (i + 1)..n {
+            let b = addresses.get(j).unwrap();
+            if a == b {
+                return Err(AllowlistPayloadError::DuplicateAddress);
+            }
+        }
+    }
+    let _ = env;
+    Ok(())
+}
 
 /// Errors specific to escrow close finalization.
 #[contracterror]
@@ -221,6 +280,9 @@ pub enum CloseError {
     /// The escrow has an active dispute.
     ActiveDispute = 4,
 }
+
+/// Maximum number of addresses that may appear in a single allowlist event payload.
+pub const MAX_ALLOWLIST_EVENT_ADDRESSES: u32 = MAX_INVESTOR_ALLOWLIST_BATCH;
 
 /// Metadata captured when an escrow is finalized.
 #[contracttype]
@@ -247,6 +309,12 @@ const CLOSE_METADATA_KEY: &str = "CloseMetadata";
 
 #[contractimpl]
 impl LiquifactEscrow {
+    /// Read-only view returning the maximum number of addresses permitted in a
+    /// single allowlist event payload. Stable across schema versions.
+    pub fn get_max_allowlist_event_addresses(_env: Env) -> u32 {
+        MAX_ALLOWLIST_EVENT_ADDRESSES
+    }
+
     /// Finalizes the escrow after all balance and dispute obligations have settled.
     ///
     /// # Preconditions
