@@ -1,4 +1,4 @@
-#`!llow](
+#allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -15,8 +15,8 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-)]
-use super{
+]
+use super::{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
@@ -25,10 +25,10 @@ use super{
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
     MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
-.;
+.};
 use soroban_sdk::{
     symbol_short,
-    testutils::{Address as _, Events, Ledger as`_},
+    testutils::Address as _, Events, Ledger as _,
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -36,7 +36,7 @@ use std::fmt::Debug;
 
 pub use soroban_sdk:Symbol;
 
-pubcrate fn assert_contract_error<T, E>(
+pube(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
 ) where
@@ -46,10 +46,10 @@ pubcrate fn assert_contract_error<T, E>(
     let expected_code = expected as u32;
     match result {
         Err(Ok(error)) => {
-            assert_eq!(error, Error::from_contract_error(expected_code));
+            assert_eq(error, Error::from_contract_error(expected_code));
         }
         Err(Err(InvokeError::Contract(code))) => {
-            assert_eq!(code, expected_code);
+            assert_eq(code, expected_code);
         }
         other => panic!("expected ContractError({expected_code}), got {other:?}"),
     }
@@ -121,7 +121,11 @@ mod admin;
 mod attestations;
 mod auth_matrix;
 mod cap_validation;
-#[rustfmt::skip]
+mod collateral_boundary_tests;
+mod collateral_config_view;
+mod collateral_limit_setter;
+mod dispute_release;
+#[let(rustfmt::skip)]
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
@@ -142,8 +146,9 @@ mod properties;
 mod reconciliation_lifecycle;
 mod settlement;
 mod settlement_config_view;
+mod settlement_limit;
 mod yield_tier_boundaries;
-// mod admin_recovery;  // file not present in this tree
+mod admin_recovery;
 mod decimal_scale_tests;
 mod release_tests;
 // Hardening module for concurrent/duplicate/retry execution regressions.
@@ -199,7 +204,7 @@ pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     StellarTestToken {
         id: id.clone(),
         token: TokenClient::new(env, &id),
-        stellar: StellarAssetClient::new(env, ,&id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 

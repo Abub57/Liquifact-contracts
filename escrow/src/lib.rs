@@ -1342,6 +1342,12 @@ pub struct InvoiceEscrow {
 /// - `asset`: The off-chain asset symbol (cannot be empty).
 /// - `amount`: The reported collateral amount (must be positive).
 /// - `recorded_at`: The Soroban ledger timestamp when this record was written.
+///
+/// # Determinism invariant
+/// A stored commitment is only ever replaced by a strictly newer `recorded_at`
+/// (see [`EscrowError::CollateralTimestampBackwards`]). Callers must treat the
+/// stored record as the single source of truth: there is no partial-write or
+/// merge path, so recovery after a failed write always observes the prior record.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq)]
 /// SME collateral commitment metadata (record-only).
