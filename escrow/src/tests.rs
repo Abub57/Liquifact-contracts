@@ -49,7 +49,7 @@ mod cap_validation;
 mod coverage;
 mod external_calls;
 mod external_calls_mocked;
-mod collateral_boundary_tests;
+mod fee_split_proptest;
 mod funding;
 mod init;
 mod integration;
