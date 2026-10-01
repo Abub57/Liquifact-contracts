@@ -1413,7 +1413,7 @@ fn batch_allowlist_empty_batch_returns_typed_error() {
     let v: soroban_sdk::Vec<Address> = soroban_sdk::Vec::new(&env);
 
     assert_contract_error_gate(
-        client.try_set_investors_allowlisted(&v, &true),
+        client.try_set_investors_allowlisted(&v, &true, &client.get_admin_nonce()),
         EscrowError::InvestorBatchEmpty,
     );
 }
@@ -1432,13 +1432,13 @@ fn batch_revoke_max_entries_count_reaches_zero() {
         v.push_back(Address::generate(&env));
     }
 
-    client.set_investors_allowlisted(&v, &true);
+    client.set_investors_allowlisted(&v, &true, &client.get_admin_nonce());
     assert_eq!(
         client.get_allowlisted_investors_count(),
         super::MAX_INVESTOR_ALLOWLIST_BATCH
     );
 
-    client.set_investors_allowlisted(&v, &false);
+    client.set_investors_allowlisted(&v, &false, &client.get_admin_nonce());
     assert_eq!(
         client.get_allowlisted_investors_count(),
         0,
@@ -1462,8 +1462,8 @@ fn pagination_full_scan_no_overflow_or_duplicates() {
     let mut inserted = std::collections::HashSet::new();
     for _ in 0..n {
         let addr = Address::generate(&env);
-        inserted.insert(addr.to_string());
-        client.set_investor_allowlisted(&addr, &true);
+        inserted.insert(format!("{addr}"));
+        client.set_investor_allowlisted(&addr, &true, &client.get_admin_nonce());
     }
 
     // Paginate with page size 5 → 3 pages (5, 5, 3).
@@ -1477,7 +1477,7 @@ fn pagination_full_scan_no_overflow_or_duplicates() {
             break;
         }
         for i in 0..page_len {
-            let addr_str = page.get(i).unwrap().to_string();
+            let addr_str = format!("{}", page.get(i).unwrap());
             assert!(
                 collected.insert(addr_str.clone()),
                 "duplicate address {addr_str} found in paginated results"
@@ -1507,7 +1507,7 @@ fn saturation_large_limit_from_mid_page_returns_tail() {
     let mut addrs = soroban_sdk::Vec::new(&env);
     for _ in 0..5 {
         let addr = Address::generate(&env);
-        client.set_investor_allowlisted(&addr, &true);
+        client.set_investor_allowlisted(&addr, &true, &client.get_admin_nonce());
         addrs.push_back(addr);
     }
 
