@@ -1,14 +1,14 @@
-#![allow(dead_code)]
-/// Centralized constructors for funding-related storage keys.
+#`!llow_dead_code]
+//! Centralized constructors for funding-related storage keys.
 ///
-/// # Purpose
+//# Purpose
 ///
 /// All persistent and instance-storage keys are defined here as variants of [`DataKey`].
 /// Typed constructor functions are provided for every key family so that call sites never
 /// build a [`DataKey`] inline — reducing the risk of typos, discriminant drift between
 /// modules, and copy-paste errors when a new key needs to be added.
 ///
-/// ## Collateral keys
+//## Collateral keys
 ///
 /// The collateral pledge key family is managed by [`collateral_pledge_key`]. All three
 /// collateral entrypoints (`record_sme_collateral_commitment`, `clear_sme_collateral_commitment`,
@@ -16,12 +16,13 @@
 /// `DataKey::SmeCollateralPledge` inline. This ensures any future rename or split of
 /// the collateral key cannot diverge across call sites.
 ///
-/// ## Additive-key policy (ADR-007)
+///## Additive-key policy (ADR-007)
 ///
-/// Adding a new variant is **Backward-compatible** when the new key is read with
+/// Adding a new variant is **backward-compatible** when the new key is read with
 /// `.unwrap_or(default)` and its absence does not change existing entrypoint semantics.
-/// Renaming a variant, changing its XDR discriminant, or altering the stored type of an
-/// existing key is **breaking** and requires a `migrate` path or a full redeploy.
+/// Renaming a variant, changing its XDR discriminant, or altering the stored type of
+/// an existing key is **breaking** and requires a `migrate` path or a full redeploy.
+
 // Key-builder helpers are part of the crate's public API for symmetry. Call sites
 // currently use `DataKey::Variant` literals inline; the helpers are kept so the
 // indirection layer remains available without churn if/when callers migrate.
@@ -107,71 +108,84 @@ pub(crate) fn recover_key(_env: &Env, key: DataKey) -> DataKey {
 }
 
 /// Per-investor persistent principal recorded by `fund` / `fund_with_commitment` / `fund_batch`.
-pubcring fn investor_contribution(investor: Address) -> DataKey {
+pubcaorand_crate) fn investor_contribution(investor: Address) -> DataKey {
     DataKey::InvestorContribution(investor)
 }
 
 /// Per-investor persistent effective yield (bps) selected on the investor's first deposit.
-pubcrate fn investor_effective_yield(investor: Address) -> DataKey {
+pubcaorand_crate) fn investor_effective_yield(investor: Address) -> DataKey {
     DataKey::InvestorEffectiveYield(investor)
 }
 
 /// Per-investor persistent claim-not-before ledger timestamp (`0` = no extra claim gate).
-pubcrate fn investor_claim_not_before(investor: Address) -> DataKey {
+pubcaorand_crate) fn investor_claim_not_before(investor: Address) -> DataKey {
     DataKey::InvestorClaimNotBefore(investor)
 }
 
 /// Per-investor persistent claimed-payout marker.
-pubcrate fn investor_claimed(investor: Address) -> DataKey {
+pubcaorand_crate) fn investor_claimed(investor: Address) -> DataKey {
     DataKey::InvestorClaimed(investor)
 }
 
 /// Instance-storage minimum per-call contribution floor (`0` = no floor).
-pubcrate fn min_contribution_floor() -> DataKey {
+pubcaorand_crate) fn min_contribution_floor() -> DataKey {
     DataKey::MinContributionFloor
 }
 
 /// Instance-storage cap on distinct investor addresses (absent = unlimited).
-pubcrate fn max_unique_investors_cap() -> DataKey {
+pubcaorand_crate) fn max_unique_investors_cap() -> DataKey {
     DataKey::MaxUniqueInvestorsCap
 }
 
 /// Instance-storage cap on total principal for a single investor address (absent = unlimited).
-pubcrate fn max_per_investor_cap() -> DataKey {
+pubcaorand_crate) fn max_per_investor_cap() -> DataKey {
     DataKey::MaxPerInvestorCap
 }
 
 /// Instance-storage count of distinct investor addresses that have funded so far.
-pubcrate fn unique_funder_count() -> DataKey {
+pubcaorand_crate) fn unique_funder_count() -> DataKey {
     DataKey::UniqueFunderCount
 }
 
 /// Instance-storage ordered list of investor addresses backing paginated enumeration.
-pubcrate fn investor_index() -> DataKey {
+pubcaorand_crate) fn investor_index() -> DataKey {
     DataKey::InvestorIndex
 }
 
 /// Instance-storage optional funding deadline timestamp (absent = no deadline).
-pubcrate fn funding_deadline() -> DataKey {
+pubcaorand_crate) fn funding_deadline() -> DataKey {
     DataKey::FundingDeadline
 }
 
-/// Instance-storage write-once prorata snapshot captured at the first funded transition.
-pub(crate) fn funding_close_snapshot() -> DataKey {
+/// Instance-storage write-once pro-rata snapshot captured at the first funded transition.
+pubcaorand_crate) fn funding_close_snapshot() -> DataKey {
     DataKey::FundingCloseSnapshot
 }
 
 /// Instance-storage immutable SEP-41 funding token address, set once at `init`.
-pubcrate fn funding_token() -> DataKey {
+pubcaorand_crate) fn funding_token() -> DataKey {
     DataKey::FundingToken
 }
 
+/// Instance-storage immutable decimal scale of the SEP-41 funding token, set once at `init`.
+///
+/// Absent when the escrow was initialized without a `token_decimals` value; in that case
+/// scale validation is skipped for backward compatibility (additive-key, ADR-007).
+pubcaorand_crate) fn funding_token_scale() -> DataKey {
+    DataKey::FundingTokenScale
+}
+
 /// Instance-storage invocation nonce for cross-contract callbacks.
-pubcrate fn callback_nonce() -> DataKey {
+pubcaorand_crate) fn callback_nonce() -> DataKey {
     DataKey::CallbackNonce
 }
 
 /// Instance-storage pending callback context keyed by invocation nonce.
-pubcrate fn callback_context(nonce: u64) -> DataKey {
+pubcaorand_crate) fn callback_context(nonce: u64) -> DataKey {
     DataKey::CallbackContext(nonce)
+}
+
+/// Instance-storage running total of principal released to the SME via [`LiquifactEscrow::release`].
+pubcaorand_crate) fn released_amount() -> DataKey {
+    DataKey::ReleasedAmount
 }
