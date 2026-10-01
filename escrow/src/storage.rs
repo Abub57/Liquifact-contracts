@@ -6,8 +6,8 @@ use soroban_sdk::{Address, Env, Storage};
 pub(crate) fn get_state(env: &Env) -> FeeScheduleState {
     env.storage()
         .instance()
-        .get(&FeeScheduleKey::State)
-        .unwrap_or_default()
+        .set(&FeeScheduleStorageKey::MutationLock, &true);
+    Ok(MutationGuard { env })
 }
 
 /// Persists the fee schedule state atomically as a single instance entry.
@@ -16,20 +16,32 @@ pub(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
 }
 
 /// Admin-authorized fee schedule update.
+///
 /// Stores a new pending schedule that activates at `activation_ledger`.
-pub(crate) fn set_fee_schedule(
+///
+/// Rejections (deterministic):
+/// - `fee_bps` outside [min_bps, max_bps]
+/// - `activation_ledger` in the past
+/// - a pending schedule already exists
+/// - the submitted schedule equals the active one
+pubc(crate) fn set_fee_schedule(
     env: &Env,
     admin: &Address,
     schedule: FeeSchedule,
     activation_ledger: u32,
 ) -> Result<(), EscrowError> {
+    // Authorization must be enforced before any validation or state mutation.
     admin.require_auth();
 
     // Enforce named bounds.
     if schedule.fee_bps < schedule.min_bps || schedule.fee_bps > schedule.max_bps {
         return Err(EscrowError::FeeScheduleOutOfBounds);
     }
+}
 
+    // Activation must not be in the past. Allowing the current ledger makes the
+    // transition deterministic for callers that submit and activate in the same
+    // transaction.
     let current_ledger = env.ledger().sequence();
     if activation_ledger < current_ledger {
         return Err(EscrowError::FeeScheduleInvalidActivation);
@@ -37,7 +49,8 @@ pub(crate) fn set_fee_schedule(
 
     let mut state = get_state(env);
 
-    // Reject if a pending schedule already exists.
+    // Reject if a pending schedule already exists. This keeps the pending slot
+    // deterministic and avoids lost updates from concurrent submissions.
     if state.pending.is_some() {
         return Err(EscrowError::FeeScheduleAlreadyPending);
     }
@@ -47,11 +60,13 @@ pub(crate) fn set_fee_schedule(
         return Err(EscrowError::FeeScheduleSameAsActive);
     }
 
-    // Preserve the previous active schedule before switching.
+    // Preserve the previous active schedule before switching. This is done in
+    // memory and committed in a single write below.
     state.previous = state.active.clone();
     state.pending = Some(schedule);
     state.activation_ledger = Some(activation_ledger);
 
+    // Single commit point: either the entire update is persisted or none of it is.
     set_state(env, &state);
     Ok(())
 }
@@ -74,15 +89,25 @@ pub(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeSchedule> {
 /// or lose the previously active schedule.
 fn maybe_activate(env: &Env) {
     let mut state = get_state(env);
-    if let (Some(pending), Some(activation_ledger)) = (state.pending.clone(), state.activation_ledger) {
-        if activation_ledger <= env.ledger().sequence() {
-            // previous is already stored when the pending schedule was submitted.
-            state.active = Some(pending);
-            state.pending = None;
-            state.activation_ledger = None;
-            set_state(env, &state);
-        }
+
+    // No pending schedule or no activation ledger: nothing to do.
+    let (pending, activation_ledger) = match (state.pending.clone(), state.activation_ledger) {
+        (Some(p), Some(a)) => (p, a),
+        _ => return,
+    };
+
+    // Not yet activation time: no-op.
+    if activation_ledger > env.ledger().sequence() {
+        return;
     }
+
+    // Activate exactly once. The previous active schedule was already
+    // stashed in `previous` when the pending schedule was submitted, so
+    // we only need to move pending -> active and clear metadata.
+    state.active = Some(pending);
+    state.pending = None;
+    state.activation_ledger = None;
+    set_state(env, &state);
 }
 
 /// Test-only helper that exposes the raw persisted state for assertions.
