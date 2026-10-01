@@ -6,6 +6,8 @@
 //! - Result is consistent with [`LiquifactEscrow::get_version`] (both read the same key).
 //! - No auth required (pure read).
 //! - Idempotency: calling multiple times returns the same value.
+//! - Failure recovery: reads are deterministic and never mutate state, so a
+//!   failed read (or a read interleaved with a failed write) leaves storage intact.
 
 use super::super::collateral_storage::CollateralStorageKey;
 use super::super::{
@@ -17,7 +19,7 @@ use soroban_sdk::{
     Address, Env, Symbol,
 };
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 /// Register and return a fresh, uninitialised escrow client.
 fn deploy(env: &Env) -> LiquifactEscrowClient<'_> {
@@ -50,15 +52,13 @@ fn deploy_and_init(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
         &None,
         &None,
         &None,
-        &None,
         &None::<i64>,
-        &None::<u32>,
     );
 
     (client, admin, sme)
 }
 
-// ── Core behaviour ───────────────────────────────────────────────────────────
+// ── Core behaviour ────────────────────────────────────────────────────────────
 
 /// Before `init`, `get_collateral_version` must return `0` (sane default).
 #[test]
@@ -142,6 +142,7 @@ fn test_get_collateral_version_idempotent_before_init() {
     let v1 = client.get_collateral_version();
     let v2 = client.get_collateral_version();
     let v3 = client.get_collateral_version();
+
     assert_eq!(v1, v2);
     assert_eq!(v2, v3);
     assert_eq!(v1, 0);
@@ -156,6 +157,7 @@ fn test_get_collateral_version_idempotent_after_init() {
     let v1 = client.get_collateral_version();
     let v2 = client.get_collateral_version();
     let v3 = client.get_collateral_version();
+
     assert_eq!(v1, v2);
     assert_eq!(v2, v3);
     assert_eq!(v1, SCHEMA_VERSION);
@@ -186,7 +188,7 @@ fn test_get_collateral_version_equals_expected_schema_version() {
 fn test_get_collateral_version_unchanged_after_record_collateral() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, sme) = deploy_and_init(&env);
+    let (client, _admin, _sme) = deploy_and_init(&env);
 
     let before = client.get_collateral_version();
 
@@ -205,7 +207,7 @@ fn test_get_collateral_version_unchanged_after_record_collateral() {
 fn test_get_collateral_version_unchanged_after_clear_collateral() {
     let env = Env::default();
     env.mock_all_auths();
-    let (client, _admin, sme) = deploy_and_init(&env);
+    let (client, _admin, _sme) = deploy_and_init(&env);
 
     client.record_sme_collateral_commitment(&soroban_sdk::Symbol::new(&env, "GOLD"), &500_000i128);
 
