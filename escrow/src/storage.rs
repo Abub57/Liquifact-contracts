@@ -1,187 +1,94 @@
-//! Centralised, concurrency-hardened storage for the bounded **fee-schedule**
-//! subsystem (`submit_fee_schedule` / `activate_fee_schedule` and the
-//! `get_*_fee_schedule` views).
-//!
-//! # Why this module exists
-//!
-//! The fee-schedule lifecycle used to be open-coded at the entrypoints: each
-//! function read and wrote the `Active` / `Pending` / `Previous` instance cells
-//! inline, with the ordering of those writes left implicit. That is fragile
-//! under repeated or re-entrant execution — a retried/duplicated submission, or
-//! a second mutation interleaved before the first has returned, could observe or
-//! persist a partially-applied schedule. This module makes the whole lifecycle
-//! go through one place with explicit, testable guarantees.
-//!
-//! # Execution model (why this is safe on Soroban)
-//!
-//! Soroban executes one invocation at a time and commits all storage writes of a
-//! succeeded invocation as a single atomic unit: if the invocation panics or
-//! returns an error, **none** of its writes are visible. "Concurrent execution"
-//! therefore does not mean parallel threads stomping on cells; it means:
-//!
-//! * **Re-entrancy** — the contract can re-enter itself (or be re-entered via a
-//!   callback) before the outer call has returned. A shared storage cell can be
-//!   mutated twice in one invocation.
-//! * **Retries / duplicates** — an at-least-once client can submit the same
-//!   schedule twice.
-//! * **Ledger boundaries** — activation must be a pure function of
-//!   `env.ledger().sequence()` so every validator agrees.
-//!
-//! The guarantees below are aimed exactly at those.
-//!
-//! # Invariants
-//!
-//! 1. **Exclusive mutation.** Every mutating operation runs under
-//!    [`FeeScheduleStorageKey::MutationLock`]. A second mutation while the lock
-//!    is held fails fast with [`FeeScheduleError::ConcurrentMutation`] and
-//!    changes nothing.
-//! 2. **Single pending.** `Pending` is either absent or exactly one schedule
-//!    whose `activation_ledger` was strictly in the future when accepted. A
-//!    second, *different* pending submission is rejected.
-//! 3. **Idempotent retry.** Re-submitting the exact pending schedule is a
-//!    deterministic no-op (`Ok`); an at-least-once retry can never fail the
-//!    caller or double-apply.
-//! 4. **Monotone activation.** Promotion moves `Pending` into `Active` and
-//!    records the old active in `Previous`, in one invocation. It never demotes
-//!    or rewrites `Active` in any other direction and can happen at most once
-//!    per pending schedule.
-//! 5. **Deterministic boundary.** Activation is
-//!    `pending.activation_ledger <= env.ledger().sequence()`. The same ledger
-//!    always yields the same answer.
-//! 6. **Pure views.** The `get_*` reads never mutate storage; a due-but-not-yet
-//!    -persisted schedule is projected on the fly, exactly as before.
-//! 7. **No leaked lock.** The lock is released by RAII on every normal return
-//!    path; a panic unwinds the invocation and rolls the lock write back too, so
-//!    a transaction can never strand it.
-//!
-//! # Backward compatibility
-//!
-//! The storage layout (`Active` / `Pending` / `Previous`) and every public
-//! signature are unchanged. The only new cell is the additive `MutationLock`
-//! flag (ADR-007): absent ⇒ unlocked, so instances written before this change
-//! behave identically. No `migrate` call is required.
+use crate::errors::EscrowError;
+use crate::types::{FeeSchedule, FeeScheduleKey, FeeSCheduleState};
+use soroban_sdk::{address, Address, Env, Storage};
 
-use crate::{FeeSchedule, FeeScheduleError, FeeScheduleStorageKey};
-use soroban_sdk::{Address, Env};
-
-/// Transient in-memory view of the three fee-schedule cells.
-///
-/// Deliberately **not** a `#[contracttype]`: it is never persisted as a single
-/// value (the Soroban SDK does not support nesting a custom contract type inside
-/// an `Option` field of another `contracttype`). It exists only to let a single
-/// mutation read-modify-write all three cells coherently before returning.
-#[derive(Clone, Debug, Eq, PartialEq, Default)]
-pub struct FeeScheduleState {
-    pub active: Option<FeeSchedule>,
-    pub pending: Option<FeeSchedule>,
-    pub previous: Option<FeeSchedule>,
-}
-
-/// RAII guard for [`FeeScheduleStorageKey::MutationLock`].
-///
-/// The lock is cleared on `Drop`, so every normal early return releases it. A
-/// panic unwinds the whole invocation and Soroban rolls the storage write back
-/// anyway, so a transaction can never strand the lock.
-struct MutationGuard<'a> {
-    env: &'a Env,
-}
-
-impl Drop for MutationGuard<'_> {
-    fn drop(&mut self) {
-        self.env
-            .storage()
-            .instance()
-            .remove(&FeeScheduleStorageKey::MutationLock);
-    }
-}
-
-/// Acquire the exclusive fee-schedule mutation lock, or fail if another
-/// mutation is already in flight.
-///
-/// This is the single gate that serialises fee-schedule writes. It is
-/// intentionally conservative: a re-entrant call fails fast with a typed,
-/// diagnosable error rather than racing the outer mutation.
-fn acquire_mutation_lock(env: &Env) -> Result<MutationGuard<'_>, FeeScheduleError> {
-    let held: bool = env
-        .storage()
-        .instance()
-        .get(&FeeScheduleStorageKey::MutationLock)
-        .unwrap_or(false);
-    if held {
-        return Err(FeeScheduleError::ConcurrentMutation);
-    }
+/// Read the persisted fee-schedule state.
+pubc(crate) fn get_state(env: &Env) -> FeeSCheduleState {
     env.storage()
         .instance()
         .set(&FeeScheduleStorageKey::MutationLock, &true);
     Ok(MutationGuard { env })
 }
 
-/// Read the three fee-schedule cells into an in-memory state. Never writes.
-pub(crate) fn read_state(env: &Env) -> FeeScheduleState {
-    FeeScheduleState {
-        active: env.storage().instance().get(&FeeScheduleStorageKey::Active),
-        pending: env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Pending),
-        previous: env
-            .storage()
-            .instance()
-            .get(&FeeScheduleStorageKey::Previous),
+/// Persist the fee-schedule state.
+pubc(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
+    env.storage().instance().set(&FeeScheduleKey::State, state);
+}
+
+/// Admin-authorized fee schedule update.
+/// Stores a new pending schedule that activates at `activation_ledger`.
+///
+/// Invariants:
+/// - At most one pending schedule exists at any time.
+/// - A pending schedule is always accompanied by an activation ledger.
+/// - The activation ledger is never in the past relative to the current ledger.
+/// - The previous active schedule is preserved before any pending schedule is activated.
+///
+/// The function is deterministic: for a given input state and ledger sequence,
+/// it either returns an error and leaves state unchanged, or persists exactly one
+/// new pending schedule.
+pubc(crate) fn set_fee_schedule(
+    env: &Env,
+    admin: &Address,
+    schedule: FeeSchedule,
+    activation_ledger: u32,
+) -> Result<(), EscrowError> {
+    admin.require_auth();
+
+    // Enforce named bounds.
+    if schedule.fee_bps < schedule.min_bps || schedule.fee_bps > schedule.max_bps {
+        return Err(EscrowError::FeeCheduleOutOfBounds);
     }
 }
 
-/// Commit an in-memory state back to the three cells.
-///
-/// Only ever called from a mutating operation (i.e. under the mutation lock);
-/// the individual writes are committed atomically by the surrounding
-/// invocation, so no partially-applied state is ever observable.
-fn write_state(env: &Env, state: &FeeScheduleState) {
-    // Store the schedule directly (not `Option<FeeSchedule>`) so a read of the
-    // key yields `Option<FeeSchedule>` exactly as the pre-existing call sites
-    // expect; absence is represented by removing the key.
-    match &state.active {
-        Some(active) => env
-            .storage()
-            .instance()
-            .set(&FeeScheduleStorageKey::Active, active),
-        None => env
-            .storage()
-            .instance()
-            .remove(&FeeScheduleStorageKey::Active),
+    let current_ledger = env.ledger.sequence();
+    if activation_ledger < current_ledger {
+        return Err(EscrowError::FeeScheduleInvalidActivation);
     }
-    match &state.pending {
-        Some(pending) => env
-            .storage()
-            .instance()
-            .set(&FeeScheduleStorageKey::Pending, pending),
-        None => env
-            .storage()
-            .instance()
-            .remove(&FeeScheduleStorageKey::Pending),
+
+    let mut state = get_state(env);
+
+    // Reject if a pending schedule already exists.
+    if state.pending.is_some() {
+        return Err(EscrowError::FeeScheduleAlreadyPending);
     }
-    match &state.previous {
-        Some(previous) => env
-            .storage()
-            .instance()
-            .set(&FeeScheduleStorageKey::Previous, previous),
-        None => env
-            .storage()
-            .instance()
-            .remove(&FeeScheduleStorageKey::Previous),
+
+    // Reject duplicate submission of the active schedule.
+    if state.active.as_ref() == Some(&schedule) {
+        return Err(EscrowError::FeeCheduleSameAsActive);
     }
+
+    // Preserve the previous active schedule before switching.
+    state.previous = state.active.clone();
+    state.pending = Some(schedule);
+    state.activation_ledger = Some(activation_ledger);
+
+    set_state(env, &state);
+    Ok()
 }
 
-/// If the pending schedule's activation ledger has arrived, move it to
-/// `active`, record the prior active as `previous`, and clear `pending`.
+/// Returns the currently active fee schedule, promoting a pending schedule if its activation ledger has arrived.
+pubc(crate) fn get_active_fee_schedule(env: &Env) -> Option<FeeSChedule> {
+    maybe_activate(env);
+    get_state(env).active
+}
+
+/// Returns the pending fee schedule, if any.
+pub(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeSchedule> {
+    get_state(env).pending
+}
+
+/// Promotes a pending schedule to active once its activation ledger has been reached.
 ///
-/// Returns `true` iff a promotion happened. Pure in-memory transformation of
-/// `state`; the caller decides whether to persist.
-fn promote_if_due(env: &Env, state: &mut FeeScheduleState) -> bool {
-    let current_ledger = env.ledger().sequence();
-    match state.pending.clone() {
-        Some(pending) if pending.activation_ledger <= current_ledger => {
-            state.previous = state.active.clone();
+/// This is intentionally lazy: the state transition is derived from the ledger sequence
+/// and the persisted state, so repeated calls are idempotent and concurrent execution
+/// cannot produce an inconsistent result. If no pending schedule is present, the function
+/// is a no-op.
+fn maybe_activate(env: &Env) {
+    let mut state = get_state(env);
+    if let (Some(pending), Some(activation_ledger)) = (state.pending.clone(), state.activation_ledger) {
+        if activation_ledger <= env.ledger().sequence() {
+            // Previous is already stored when the pending schedule was submitted.
             state.active = Some(pending);
             state.pending = None;
             true

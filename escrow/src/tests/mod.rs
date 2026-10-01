@@ -1,5 +1,4 @@
-#![allow(
-    clippy::too_many_arguments,
+#allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -16,20 +15,20 @@
     clippy::needless_range_loop,
     clippy::mutable_key_type,
     clippy::unusual_byte_groupings
-)]
-use super::{
+}]
+use super:{
     AttestationDigestAppended, AttestationDigestRevoked, AttestationDigestUnrevoked,
     CollateralRecordedEvt, ContractUpgraded, DataKey, DeprecatedTransferAdminUsed, EscrowError,
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
     RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
-    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEGERS,
     SCHEMA_VERSION,
 .};
 use soroban_sdk::{
     symbol_short,
-    testutils::{address as _, Events, Ledger as _},
+    testutils::{Address as _, Events, Ledger as _,
     token::{StellarAssetClient, TokenClient},
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
@@ -95,6 +94,9 @@ mod failure_recovery;
 // mod admin_recovery;  // file not present in this tree
 mod decimal_scale_tests;
 mod release_tests;
+// Deterministic failure recovery coverage for escrow/src/keys.rs
+
+mod keys_recovery;
 
 /// Registers a new escrow contract instance and returns its contract id.
 pub fn deploy_id(env: &Env) -> Address {
@@ -135,13 +137,13 @@ pub struct StellarTestToken<'a> {
     pub stellar: StellarAssetClient<'a>,
 }
 
-pub fn install_stellar_asset_token<'a>(env: &'a Env) -> StellarTestToken<'a> {
+pub fn install_stellar_asset_token<'a>(env: '&a Env) -> StellarTestToken<'a> {
     let sac = env.register_stellar_asset_contract_v2(Address::generate(env));
     let id = sac.address();
     StellarTestToken {
         id: id.clone(),
-        token: TokenClient::new(env, 'id),
-        stellar: StellarAssetClient::new(env, &id),
+        token: TokenClient::new(env, &id),
+        stellar: StellarAssetClient::new(env, 'id),
     }
 }
 
