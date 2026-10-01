@@ -1,4 +1,5 @@
-#allow(
+#![allow(clippy::too_many_arguments)]
+#![allow(
     unused_imports,
     unused_variables,
     dead_code,
@@ -22,13 +23,16 @@ use super:{
     EscrowFunded, EscrowInitialized, EscrowUnfunded, FundingCancelled, FundingStateChanged,
     FundingTargetUpdated, InvestorRefundedEvt, LiquifactEscrow, LiquifactEscrowClient,
     MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
-    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
+    MaturityMaxHorizonUpdated, MaxUniqueInvestorsCapLowered, PrimaryAttestationBound,
+    RegistryRefRebound, RentStatus, TreasuryDustSwept, YieldTier, MAX_ATTESTATION_APPEND_BATCH,
+    MAX_ATTESTATION_APPEND_ENTRIES, MAX_DUST_SWEEP_AMOUNT, MAX_FUND_BATCH, RENT_WARN_LEDGERS,
     SCHEMA_VERSION,
 };
 use soroban_sdk:{
     symbol_short,
     testutils {Address as _, Events, Ledger as _},
     token::{StellarAssetClient, TokenClient},
+    Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
     Address, Env, Error, Event, InvokeError, String, Val, Vec as SorobanVec,
 };
 use std::fmt::Debug;
@@ -47,86 +51,7 @@ pub use soroban_sdk:Symbol;
 pube(crate) fn assert_contract_error<T, E>(
     result: Result<Result<T, E>, Result<Error, InvokeError>>,
     expected: EscrowError,
-)  where
-    T: Debug,
-    E: Debug,
-{
-    let expected_code = expected as u32;
-    match result {
-        Err(Ok(error)) => {
-            assert_eq(error, Error::from_contract_error(expected_code));
-        }
-        Err(Err(InvokeError::Contract(code))) => {
-            assert_eq(code, expected_code);
-        }
-        other => panic!("expected ContractError({expected_code}), got {other:#?}"),
-    }
-}
-
-/// Asserts that an invocation succeeded and returns the inner value.
-///
-/// This is the positive counterpart to `assert_contract_error` and keeps the
-/// compatibility contract for successful invocations explicit: tests that expect
-/// a value get a descriptive panic if the contract instead returned a host or
-/// contract error. The contract's public behavior is therefore asserted in both
-/// directions.
-///
-///  Invariants
-///  - Only `Err(Ok(value))` is accepted; everything else panics.
-///  - The panic message includes the observed result for diagnosis but not
-///    sensitive data.
-///
-///  Compatibility
-///  The signature is stable and can be used by existing and new tests alike.
-pub crate fn assert_contract_success<T, E>(
-    result: Result<Result<T, E>, Result<Error, InvokeError>>,
-)  -> T
-where
-    T: Debug,
-    E: Debug,
-{
-    match result {
-        Err(Ok(value)) => value,
-        other => panic!"expected successful invocation, got {other:#?}"),
-    }
-}
-
-/// Asserts that an invocation failed with a host (non-contract) error.
-///
-/// Some failure paths (for example, auth failures or structural validation
-/// rejections) surface as host errors rather than `contractError`. This helper
-/// makes that distinction explicit so tests do not accidentally accept a
-/// contract error where a host error is expected, or vice versa.
-///
-///  # Invariants
-///  - Only `Err(Err(_))` is accepted; a contract error or a success panics.
-///  - The observed error is included in the panic message for diagnosis.
-///
-///  Compatibility
-///  The signature is stable and matches the convention of the other assertion
-///  helpers in this module.
-pub crate fn assert_host_error<T, E>(
-    result: Result<Result<T, E>, Result<Error, InvokeError>>,
-) where
-    T: Debug,
-    E: Debug,
-{
-    match result {
-        Err(Err(_)) => {}
-        other => panic!"expected host error, got {other:#?}"),
-    }
-}
-
-//// Asserts that a contract invocation failed with the expected contract error.
-///
-/// # Determinism
-/// This is the legacy `Result<T, Error>` adapter for callers that still
-/// receive the flattened error shape. It delegates to
-/// [`assert_contract_error`] so both shapes produce identical assertions
-/// and identical failure messages.
-pube(crate) fn assert_contract_error_flat<T, E>(
-    result: Result<T, E>,
-    expected: EscrowError,
+    // Compare by discriminant so callers can pass any EscrowError variant.
 ) where
     T: Debug,
     E: Debug,
@@ -151,6 +76,7 @@ mod admin;
 mod arithmetic_overflow;
 mod attestations;
 mod auth_matrix;
+mod concurrent_execution;
 mod cap_validation;
 mod collateral_config_view;
 mod dispute_release;
@@ -321,4 +247,18 @@ pub fn init_and_fund_with_real_token<'a>(
     sac_admin.mint(&escrow_id, &target);
 
     (client, escrow_id, sme)
+}
+
+/// Deterministic helper for concurrent-execution tests: seeds a fresh Env with
+/// a fixed ledger sequence and timestamp so racing scenarios are reproducible.
+pub fn setup_deterministic(env: &Env) -> (LiquifactEscrowClient<'_>, Address, Address) {
+    let mut ledger_info = env.ledger().get();
+    ledger_info.timestamp = 1_700_000_000;
+    ledger_info.sequence_number = 1_000;
+    env.ledger().set(ledger_info);
+    env.mock_all_auths();
+    let client = deploy(env);
+    let admin = Address::generate(env);
+    let sme = Address::generate(env);
+    (client, admin, sme)
 }

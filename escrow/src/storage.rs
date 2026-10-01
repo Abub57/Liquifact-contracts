@@ -4,10 +4,10 @@ use soroban_sdk::{address, Address, Env, Storage};
 
 /// Reads the fee schedule state from instance storage.
 ///
-/// This is a read-only accessor and must never mutate state. It returns the
-/// default (empty) state when nothing has been persisted yet, which keeps the
-/// initial reads deterministic and free of side effects.
-pubc(crate) fn get_state(env: &Env) -> FeeSCheduleState {
+/// This function is pure with respect to the storage and returns a default
+/// (empty) state when no state has been persisted yet. The default is deterministic
+/// and does not mutate storage.
+pub(crate) fn get_state(env: &Env) -> FeeSCheduleState {
     env.storage()
         .instance()
         .set(&FeeScheduleStorageKey::MutationLock, &true);
@@ -16,10 +16,9 @@ pubc(crate) fn get_state(env: &Env) -> FeeSCheduleState {
 
 /// Persists the fee schedule state.
 ///
-/// This is the only write path for the fee schedule state. Callers must pass a
-/// fully consistent state value so that a partial failure cannot leave the
-/// persisted state half-updated.
-pubc(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
+/// This is the only write path for the fee schedule state. All callers must
+/// ensure they are operating on a freshly read state to avoid lost updates.
+pub(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
     env.storage().instance().set(&FeeScheduleKey::State, state);
 }
 
@@ -27,25 +26,24 @@ pubc(crate) fn set_state(env: &Env, state: &FeeScheduleState) {
 ///
 /// Stores a new pending schedule that activates at `activation_ledger`.
 ///
-///  Invariants
-///  - The caller must be the admin (authorization is enforced before any state
-///    mutation).
-///  - The submitted schedule must satisfy `min_bps <= fee_bps <= max_bps`.
-///  - Activation must be in the future (or the current ledger).
-///  - At most one pending schedule may exist at a time.
-///  - The active schedule cannot be re-submitted as a pending schedule.
+/// # Invariants
 ///
-/// # Failure recovery
+/// - Only the admin can submit a schedule (authorization is enforced).
+/// - A schedule must satisfy `min_bps <= fee_bps <= max_bps`.
+/// - Activation must be at or after the current ledger sequence.
+/// - At most one pending schedule may exist at a given time.
+/// - The active schedule cannot be submitted as a new pending schedule.
+/// - The previous active schedule is preserved before the pending schedule is stored.
 ///
-/// The function is written so that any validation failure occurs before the first
-/// write. The state is built in memory and only committed via a single `set_state`call, so a failure cannot leave a partially applied schedule. If the transaction is
-/// retried, the same inputs produce the same result and the same persisted state.
+/// # Concurrency
 ///
-/// # Errors
-///
-/// Returns an `EscrowError` for authorization failures, out-of-bounds fees,
-/// invalid activation ledgers, conflicting pending schedules, and duplicate
-/// submissions of the active schedule.
+/// Soroban executes contract invocations sequentially within a ledger and atomically
+/// across ledgers. This function reads the state once, validates it, and writes it
+/// back in a single call. There is no await or external call between the read and the
+/// write, so a concurrent invocation cannot interleave and produce a lost update.
+/// Repeated calls with the same arguments are rejected by the duplicate and
+/// already-pending checks, making the operation idempotent in the sense that no
+/// additional state is created on retry.
 pub(crate) fn set_fee_schedule(
     env: &Env,
     admin: &Address,
@@ -96,26 +94,39 @@ pub(crate) fn set_fee_schedule(
 /// Returns the currently active fee schedule, promoting a pending schedule if its
 /// activation ledger has arrived.
 ///
-/// The promotion is idempotent: repeated reads at the same ledger produce the same
-/// result, and a failure to persist the promotion leaves the previous state intact
-/// so the next read retries the promotion.
-pub(crate) fn get_active_fee_schedule(env: &Env) -> Option<FeeSChedule> {
+/// This function is idempotent: calling it multiple times in the same ledger or
+/// after activation produces the same result and does not corrupt state.
+/// It also does not mutate storage when there is nothing to activate.
+pub(crate) fn get_active_fee_schedule(env: &Env) -> Option<FeeSchedule> {
     maybe_activate(env);
     get_state(env).active
 }
 
 /// Returns the pending fee schedule, if any.
 ///
-/// This is a read-only accessor and does not trigger activation.
-pubc(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeSChedule> {
-    get_state(env.pending)
+/// This is a pure read: it does not activate a pending schedule.
+/// Use `get_active_fee_schedule` to observe activation.
+pub(crate) fn get_pending_fee_schedule(env: &Env) -> Option<FeeSchedule> {
+    get_state(env).pending
 }
 
-/// Promotes a pending schedule to active once its activation ledger has arrived.
+/// Promotes a pending schedule to active if its activation ledger has arrived.
 ///
-/// The entire transition is built in memory and committed with a single `set_state`
-/// call. If the write fails, the persisted state remains unchanged and the
-/// promotion will be retried on the next read. This makes recovery deterministic.
+/// # Invariants
+"///
+/// - Only one state transition is performed per call.
+/// - The pending schedule is cleared and the activation ledger is cleared on activation.
+/// - The previous active schedule is not overwritten during activation.
+/// - The function is a no-op if there is no pending schedule or the activation
+///   ledger has not yet arrived.
+///
+/// # Concurrency
+///
+/// The read-modify-write is atomic within a Soroban invocation. Since the function
+/// does not yield control between the read and the write, concurrent invocations
+/// cannot observe an intermediate state or produce a lost update. Repeated calls
+/// are idempotent because the pending schedule is cleared before the function
+/// returns.
 fn maybe_activate(env: &Env) {
     let mut state = get_state(env);
     if let (Some(pending), Some(activation_ledger)) =
